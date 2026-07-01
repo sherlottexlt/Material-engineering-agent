@@ -241,6 +241,15 @@ async def list_feedback(limit: int = 100):
     return {"total": len(records), "records": records}
 
 
+# ===== M3-9 知识冲突检测端点 =====
+
+@app.get("/api/v1/memory/conflicts")
+async def list_conflicts(limit: int = 100):
+    """列出全部知识冲突记录（按时间倒序）"""
+    records = memory.list_conflicts(limit=limit)
+    return {"total": len(records), "records": records}
+
+
 @app.websocket("/api/v1/stream")
 async def stream(ws: WebSocket):
     """实时推送执行过程

@@ -9,6 +9,7 @@ MetaCraft Agent 三层记忆管理
 """
 import sqlite3
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
@@ -20,6 +21,28 @@ from models.entities import CaseRecord
 # 默认数据路径
 DEFAULT_DB_PATH = Path(__file__).parent.parent.parent / "data" / "metacraft.db"
 DEFAULT_CHROMA_PATH = Path(__file__).parent.parent.parent / "data" / "chroma"
+
+
+# ===== M3-9: 知识冲突检测 =====
+
+# 冲突类型常量
+CONFLICT_HARD = "hard"          # 硬冲突：相同缺陷 + 相似参数 + 不同根因
+CONFLICT_SOFT = "soft"          # 软冲突：相同根因 + 不同方案
+CONFLICT_CONFIDENCE = "confidence"  # 置信度冲突：相同场景 + 置信度差异大
+
+
+@dataclass
+class ConflictRecord:
+    """知识冲突记录（M3-9）
+
+    当新案例与已有案例存在矛盾时生成，不阻止写入，仅告警。
+    """
+    conflict_id: str
+    new_case_id: str
+    existing_case_id: str
+    conflict_type: str  # hard / soft / confidence
+    description: str
+    created_at: datetime
 
 
 class MemoryService:
@@ -73,6 +96,17 @@ class MemoryService:
                 action TEXT,
                 score REAL,
                 comment TEXT,
+                created_at TIMESTAMP
+            )
+        """)
+        # M3-9: 知识冲突记录表
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS conflicts (
+                conflict_id TEXT PRIMARY KEY,
+                new_case_id TEXT,
+                existing_case_id TEXT,
+                conflict_type TEXT,
+                description TEXT,
                 created_at TIMESTAMP
             )
         """)
@@ -173,17 +207,37 @@ class MemoryService:
             return False
 
         document = f"{case.defect_type.value}\n{case.root_cause}\n{case.solution}"
+        # M3-9: metadata 扩展工艺参数（Chroma 不支持 None，仅存非空字段）
+        metadata = {
+            "defect_type": case.defect_type.value,
+            "confidence": case.confidence,
+            "created_at": case.created_at.isoformat(),
+            "source": case.source,
+        }
+        bp = case.batch_params
+        if bp.temperature is not None:
+            metadata["temperature"] = bp.temperature
+        if bp.holding_time is not None:
+            metadata["holding_time"] = bp.holding_time
+        if bp.cooling_rate is not None:
+            metadata["cooling_rate"] = bp.cooling_rate
+
         self._collection.add(
             ids=[case.case_id],
             documents=[document],
-            metadatas=[{
-                "defect_type": case.defect_type.value,
-                "confidence": case.confidence,
-                "created_at": case.created_at.isoformat(),
-                "source": case.source,
-            }],
+            metadatas=[metadata],
         )
         logger.info(f"长期记忆已写入: {case.case_id}")
+
+        # M3-9: 写入后检测知识冲突（不阻止写入，仅告警 + 记录）
+        try:
+            conflicts = self.detect_conflicts(case)
+            for c in conflicts:
+                self.save_conflict(c)
+                logger.warning(f"知识冲突告警[{c.conflict_type}]: {c.description}")
+        except Exception as e:
+            logger.error(f"冲突检测失败（不影响写入）: {e}")
+
         return True
 
     def search_semantic(self, query: str, top_k: int = 3) -> list[dict]:
@@ -432,6 +486,207 @@ class MemoryService:
             "recent_episodic": self.list_all_episodic(limit=5),
             "recent_feedback": self.list_all_feedback(limit=5),
         }
+
+    # ===== 知识冲突检测（M3-9）=====
+
+    def detect_conflicts(self, case: CaseRecord, top_k: int = 10) -> list[ConflictRecord]:
+        """检测新案例与已有案例的知识冲突
+
+        冲突类型：
+        - hard: 相同缺陷 + 相似参数 + 不同根因（数据错误或工艺漂移）
+        - soft: 相同根因 + 不同方案（工艺改进，正常但需记录）
+        - confidence: 相同场景 + 置信度差异 > 0.3
+
+        Args:
+            case: 待写入的新案例
+            top_k: 检索候选数量
+
+        Returns:
+            冲突记录列表（空列表表示无冲突）
+        """
+        self._ensure_chroma()
+        if self._collection is None:
+            return []
+
+        # 用缺陷类型 + 根因关键词检索相似案例
+        query = f"{case.defect_type.value} {case.root_cause}"
+        candidates = self.search_semantic(query, top_k=top_k)
+
+        conflicts = []
+        now = datetime.now()
+        for cand in candidates:
+            # 排除自身（相同 case_id）
+            if cand.get("id") == case.case_id:
+                continue
+
+            meta = cand.get("metadata", {})
+            # 只比较相同缺陷类型
+            if meta.get("defect_type") != case.defect_type.value:
+                continue
+
+            # 工艺参数相似度判断（旧数据无工艺参数时降级为相似）
+            if not self._params_similar(case, meta):
+                continue
+
+            existing_id = cand.get("id", "unknown")
+            document = cand.get("document", "")
+            existing_root = self._extract_field(document, "root_cause")
+            existing_solution = self._extract_field(document, "solution")
+            existing_conf = float(meta.get("confidence", 0.5))
+
+            # 硬冲突：相似参数 + 不同根因
+            if not self._root_cause_similar(case.root_cause, existing_root):
+                conflicts.append(ConflictRecord(
+                    conflict_id=f"cf_{int(now.timestamp())}_{uuid.uuid4().hex[:6]}",
+                    new_case_id=case.case_id,
+                    existing_case_id=existing_id,
+                    conflict_type=CONFLICT_HARD,
+                    description=f"相同缺陷({case.defect_type.value})+相似参数，根因不同："
+                                f"新='{case.root_cause}' vs 旧='{existing_root}'",
+                    created_at=now,
+                ))
+                continue  # 硬冲突已记录，跳过软冲突检测
+
+            # 软冲突：相同根因 + 不同方案
+            if case.solution and existing_solution and case.solution != existing_solution:
+                conflicts.append(ConflictRecord(
+                    conflict_id=f"cf_{int(now.timestamp())}_{uuid.uuid4().hex[:6]}",
+                    new_case_id=case.case_id,
+                    existing_case_id=existing_id,
+                    conflict_type=CONFLICT_SOFT,
+                    description=f"相同根因，方案不同："
+                                f"新='{case.solution}' vs 旧='{existing_solution}'",
+                    created_at=now,
+                ))
+
+            # 置信度冲突：置信度差异 > 0.3
+            if abs(case.confidence - existing_conf) > 0.3:
+                conflicts.append(ConflictRecord(
+                    conflict_id=f"cf_{int(now.timestamp())}_{uuid.uuid4().hex[:6]}",
+                    new_case_id=case.case_id,
+                    existing_case_id=existing_id,
+                    conflict_type=CONFLICT_CONFIDENCE,
+                    description=f"相同场景，置信度差异大："
+                                f"新={case.confidence} vs 旧={existing_conf}",
+                    created_at=now,
+                ))
+
+        return conflicts
+
+    def _params_similar(
+        self,
+        case: CaseRecord,
+        meta: dict,
+        temp_tol: float = 10.0,
+        time_tol: float = 15.0,
+    ) -> bool:
+        """判断工艺参数是否相似
+
+        Args:
+            case: 新案例
+            meta: 已有案例的 metadata
+            temp_tol: 温度容差 (°C)
+            time_tol: 保温时间容差 (min)
+
+        Returns:
+            是否相似（旧数据无工艺参数时降级为相似）
+        """
+        has_temp = isinstance(meta.get("temperature"), (int, float))
+        has_time = isinstance(meta.get("holding_time"), (int, float))
+
+        # 旧数据无工艺参数，降级为相似
+        if not has_temp and not has_time:
+            return True
+
+        # 温度比较
+        if has_temp and case.batch_params.temperature is not None:
+            if abs(float(meta["temperature"]) - case.batch_params.temperature) > temp_tol:
+                return False
+
+        # 保温时间比较
+        if has_time and case.batch_params.holding_time is not None:
+            if abs(float(meta["holding_time"]) - case.batch_params.holding_time) > time_tol:
+                return False
+
+        return True
+
+    def _root_cause_similar(self, root1: str, root2: str) -> bool:
+        """判断两个根因是否相似（字符级 bigram 重叠度 ≥ 50%）
+
+        用 bigram 而非空格分词，适配中文无空格的根因文本。
+
+        Args:
+            root1: 根因文本1
+            root2: 根因文本2
+
+        Returns:
+            是否相似
+        """
+        if not root1 or not root2:
+            return False
+        # 字符级 bigram 集合
+        bigrams1 = {root1[i:i + 2] for i in range(len(root1) - 1)}
+        bigrams2 = {root2[i:i + 2] for i in range(len(root2) - 1)}
+        if not bigrams1 or not bigrams2:
+            return False
+        overlap = len(bigrams1 & bigrams2)
+        threshold = min(len(bigrams1), len(bigrams2)) * 0.5
+        return overlap >= threshold
+
+    def _extract_field(self, document: str, field: str) -> str:
+        """从 document 中提取字段
+
+        document 格式：f"{defect_type}\\n{root_cause}\\n{solution}"
+
+        Args:
+            document: Chroma 存储的文档
+            field: 要提取的字段名 (defect_type/root_cause/solution)
+
+        Returns:
+            字段值（找不到返回空字符串）
+        """
+        parts = document.split("\n")
+        idx = {"defect_type": 0, "root_cause": 1, "solution": 2}.get(field)
+        if idx is not None and idx < len(parts):
+            return parts[idx]
+        return ""
+
+    def save_conflict(self, conflict: ConflictRecord) -> bool:
+        """持久化冲突记录到 SQLite
+
+        Args:
+            conflict: 冲突记录
+
+        Returns:
+            是否成功
+        """
+        try:
+            self.db.execute(
+                "INSERT INTO conflicts VALUES (?, ?, ?, ?, ?, ?)",
+                (conflict.conflict_id, conflict.new_case_id, conflict.existing_case_id,
+                 conflict.conflict_type, conflict.description, conflict.created_at),
+            )
+            self.db.commit()
+            return True
+        except Exception as e:
+            logger.error(f"保存冲突记录失败: {e}")
+            return False
+
+    def list_conflicts(self, limit: int = 100) -> list[dict]:
+        """列出全部冲突记录（按时间倒序）
+
+        Args:
+            limit: 最大返回数量
+
+        Returns:
+            冲突记录列表
+        """
+        cur = self.db.execute(
+            "SELECT * FROM conflicts ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        )
+        columns = [d[0] for d in cur.description]
+        return [dict(zip(columns, row)) for row in cur.fetchall()]
 
     # ===== 遗忘机制 =====
 

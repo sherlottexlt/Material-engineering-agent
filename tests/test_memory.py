@@ -447,6 +447,191 @@ class TestSearchCasesSemantic:
         assert result["total"] <= 2
 
 
+# ===== M3-9: 知识冲突检测测试 =====
+
+from agent.memory.memory_service import (
+    ConflictRecord, CONFLICT_HARD, CONFLICT_SOFT, CONFLICT_CONFIDENCE,
+)
+
+
+def _make_case_with_params(case_id, temperature=850, holding_time=120, **kw):
+    """构造带自定义工艺参数的测试案例"""
+    defaults = dict(
+        case_id=case_id,
+        defect_type=DefectType.HARDNESS_LOW,
+        batch_params=BatchParams(
+            batch_id="B001",
+            process_type=ProcessType.HEAT_TREATMENT,
+            temperature=temperature,
+            holding_time=holding_time,
+            start_time=datetime.now(),
+        ),
+        root_cause="保温时间不足",
+        solution="holding_time +15",
+        confidence=0.8,
+    )
+    defaults.update(kw)
+    return CaseRecord(**defaults)
+
+
+class TestConflictDetection:
+    """M3-9 知识冲突检测测试"""
+
+    def test_detect_hard_conflict(self, memory_with_chroma):
+        """硬冲突：相同缺陷 + 相似参数 + 不同根因"""
+        memory = memory_with_chroma
+        case1 = _make_case_with_params("C_HD1", root_cause="保温时间不足", confidence=0.8)
+        memory.write_semantic(case1)
+
+        # 案例2：相同缺陷 + 相似参数 + 不同根因
+        case2 = _make_case_with_params("C_HD2", root_cause="冷却速率过低", confidence=0.7)
+        conflicts = memory.detect_conflicts(case2)
+
+        assert len(conflicts) >= 1
+        assert any(c.conflict_type == CONFLICT_HARD for c in conflicts)
+
+    def test_detect_soft_conflict(self, memory_with_chroma):
+        """软冲突：相同根因 + 不同方案"""
+        memory = memory_with_chroma
+        case1 = _make_case_with_params("C_SF1", root_cause="保温时间不足", solution="holding_time +15")
+        memory.write_semantic(case1)
+
+        # 案例2：相同根因 + 不同方案
+        case2 = _make_case_with_params("C_SF2", root_cause="保温时间不足", solution="holding_time +20", confidence=0.75)
+        conflicts = memory.detect_conflicts(case2)
+
+        # 根因相同，不应有 hard 冲突
+        assert not any(c.conflict_type == CONFLICT_HARD for c in conflicts)
+        # 方案不同，应有 soft 冲突
+        assert any(c.conflict_type == CONFLICT_SOFT for c in conflicts)
+
+    def test_detect_confidence_conflict(self, memory_with_chroma):
+        """置信度冲突：置信度差异 > 0.3"""
+        memory = memory_with_chroma
+        case1 = _make_case_with_params("C_CF1", root_cause="保温时间不足", solution="holding_time +15", confidence=0.9)
+        memory.write_semantic(case1)
+
+        # 案例2：相同根因 + 相同方案 + 置信度差异大
+        case2 = _make_case_with_params("C_CF2", root_cause="保温时间不足", solution="holding_time +15", confidence=0.4)
+        conflicts = memory.detect_conflicts(case2)
+
+        assert any(c.conflict_type == CONFLICT_CONFIDENCE for c in conflicts)
+
+    def test_no_conflict_different_defect(self, memory_with_chroma):
+        """不同缺陷类型无冲突"""
+        memory = memory_with_chroma
+        case1 = _make_case_with_params("C_ND1", defect_type=DefectType.HARDNESS_LOW)
+        memory.write_semantic(case1)
+
+        case2 = _make_case_with_params(
+            "C_ND2", defect_type=DefectType.CRACK,
+            root_cause="裂纹扩展", solution="检查原材料",
+        )
+        conflicts = memory.detect_conflicts(case2)
+
+        assert len(conflicts) == 0
+
+    def test_no_conflict_different_params(self, memory_with_chroma):
+        """工艺参数差异大无冲突"""
+        memory = memory_with_chroma
+        case1 = _make_case_with_params("C_NP1", temperature=850, holding_time=120)
+        memory.write_semantic(case1)
+
+        # 温度差 50°C，远超容差 10°C
+        case2 = _make_case_with_params(
+            "C_NP2", temperature=900, holding_time=120,
+            root_cause="温度偏高", solution="temperature -20",
+        )
+        conflicts = memory.detect_conflicts(case2)
+
+        assert len(conflicts) == 0
+
+    def test_params_similar_old_data(self, memory_with_chroma):
+        """旧数据无工艺参数时降级为相似"""
+        memory = memory_with_chroma
+        # 手动写入旧格式 metadata（无 temperature/holding_time）
+        memory._collection.add(
+            ids=["C_OLD"],
+            documents=["hardness_low\n保温时间不足\nholding_time +15"],
+            metadatas=[{"defect_type": "hardness_low", "confidence": 0.8, "source": "manual"}],
+        )
+
+        case = _make_case_with_params("C_NEW", root_cause="冷却速率过低", confidence=0.7)
+        conflicts = memory.detect_conflicts(case)
+
+        # 旧数据无工艺参数，降级为相似，应检测到 hard 冲突
+        assert any(c.conflict_type == CONFLICT_HARD for c in conflicts)
+
+    def test_root_cause_similar(self, memory):
+        """根因相似度判断（bigram 重叠）"""
+        assert memory._root_cause_similar("保温时间不足", "保温时间不足") is True
+        assert memory._root_cause_similar("保温时间不足", "保温时间严重不足") is True
+        assert memory._root_cause_similar("保温时间不足", "冷却速率过低") is False
+        assert memory._root_cause_similar("", "保温时间不足") is False
+        assert memory._root_cause_similar("保温时间不足", "") is False
+        assert memory._root_cause_similar("a", "a") is False  # 单字符无 bigram
+
+    def test_extract_field(self, memory):
+        """从 document 中提取字段"""
+        doc = "hardness_low\n保温时间不足\nholding_time +15"
+        assert memory._extract_field(doc, "defect_type") == "hardness_low"
+        assert memory._extract_field(doc, "root_cause") == "保温时间不足"
+        assert memory._extract_field(doc, "solution") == "holding_time +15"
+        assert memory._extract_field(doc, "unknown") == ""
+        assert memory._extract_field("only_one_line", "root_cause") == ""
+
+    def test_save_and_list_conflict(self, memory):
+        """保存 + 查询冲突记录"""
+        now = datetime.now()
+        conflict = ConflictRecord(
+            conflict_id="cf_test_001",
+            new_case_id="C_NEW",
+            existing_case_id="C_OLD",
+            conflict_type=CONFLICT_HARD,
+            description="测试冲突",
+            created_at=now,
+        )
+
+        ok = memory.save_conflict(conflict)
+        assert ok is True
+
+        results = memory.list_conflicts()
+        assert len(results) == 1
+        assert results[0]["conflict_id"] == "cf_test_001"
+        assert results[0]["conflict_type"] == "hard"
+
+    def test_write_semantic_triggers_conflict_detection(self, memory_with_chroma):
+        """write_semantic 自动检测冲突并记录到 SQLite"""
+        memory = memory_with_chroma
+        case1 = _make_case_with_params("C_W1", root_cause="保温时间不足", confidence=0.8)
+        memory.write_semantic(case1)
+
+        # 写入冲突案例（不同根因 → hard 冲突）
+        case2 = _make_case_with_params("C_W2", root_cause="冷却速率过低", confidence=0.7)
+        memory.write_semantic(case2)
+
+        # 应该检测到冲突并记录
+        conflicts = memory.list_conflicts()
+        assert len(conflicts) >= 1
+        assert any(c["conflict_type"] == "hard" for c in conflicts)
+
+    def test_detect_conflicts_without_chroma(self, memory):
+        """无 Chroma 时检测返回空列表"""
+        case = _make_case_with_params("C_NC1")
+        conflicts = memory.detect_conflicts(case)
+        assert conflicts == []
+
+    def test_self_not_conflict(self, memory_with_chroma):
+        """检测时排除自身（相同 case_id）"""
+        memory = memory_with_chroma
+        case = _make_case_with_params("C_SELF", root_cause="保温时间不足", confidence=0.8)
+        memory.write_semantic(case)
+
+        # 再次检测同一个案例，不应产生冲突
+        conflicts = memory.detect_conflicts(case)
+        assert len(conflicts) == 0
+
+
 class _RecordingMemoryService:
     """记录写入调用的 MemoryService 替身，用于隔离测试"""
 
