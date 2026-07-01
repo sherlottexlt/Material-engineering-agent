@@ -1,0 +1,163 @@
+{
+  "summary": {
+    "total_cases": 3,
+    "success_count": 3,
+    "error_count": 0,
+    "loose_accuracy": 1.0,
+    "strict_accuracy": 1.0,
+    "avg_hit_rate": 1.0,
+    "avg_elapsed_seconds": 93.3,
+    "avg_retry_count": 0.0,
+    "llm_source_rate": 1.0,
+    "review_approval_rate": 1.0,
+    "category_stats": {
+      "冷却速率过低": {
+        "total": 3,
+        "loose": 3,
+        "strict": 3,
+        "loose_acc": 1.0,
+        "strict_acc": 1.0,
+        "avg_hit_rate": 1.0
+      }
+    },
+    "difficulty_stats": {
+      "easy": {
+        "total": 2,
+        "loose": 2,
+        "loose_acc": 1.0
+      },
+      "medium": {
+        "total": 1,
+        "loose": 1,
+        "loose_acc": 1.0
+      }
+    },
+    "total_elapsed_seconds": 280.0,
+    "flow_name": "parallel"
+  },
+  "results": [
+    {
+      "case_id": "SC-017",
+      "batch_id": "B20260717-B",
+      "difficulty": "easy",
+      "expected_root_cause": "冷却速率过低",
+      "expected_keywords": [
+        "冷却",
+        "cooling_rate",
+        "冷却速率"
+      ],
+      "expected_adjustment": "cooling_rate 提升至 8.0",
+      "batch_params": {
+        "batch_id": "B20260717-B",
+        "process_type": "heat_treatment",
+        "temperature": 842,
+        "holding_time": 136,
+        "cooling_rate": 2.4,
+        "raw_material_batch": "RM-2026-9085",
+        "start_time": "2026-07-03T08:00:00",
+        "end_time": "2026-07-25T09:30:00"
+      },
+      "status": "success",
+      "elapsed_seconds": 130.6,
+      "pred_root_cause": "冷却速率过低",
+      "pred_confidence": 0.9,
+      "proposals_count": 2,
+      "source": "llm",
+      "review_approved": true,
+      "retry_count": 0,
+      "hit_keywords": [
+        "冷却",
+        "cooling_rate",
+        "冷却速率"
+      ],
+      "hit_count": 3,
+      "total_keywords": 3,
+      "hit_rate": 1.0,
+      "loose_correct": true,
+      "strict_correct": true,
+      "final_answer_preview": "好的，操作员。根据技术分析，我为您总结了两个调整方案。\n\n**结论：** 当前产品硬度偏低，主要原因是**冷却速度太慢**。建议优先采用方案一，将冷却速度提升到标准值。\n\n---\n\n### 方案一（推荐，置信度：高）\n\n*   **问题原因：** 冷却速度太慢（当前2.4 ℃/s，标准应为5.0 ℃/s）。\n*   **调整操作：** 将冷却速度从 **2.4 ℃/s 提高到 5.0 ℃/s**。"
+    },
+    {
+      "case_id": "SC-024",
+      "batch_id": "B20260724-B",
+      "difficulty": "medium",
+      "expected_root_cause": "冷却速率过低",
+      "expected_keywords": [
+        "冷却",
+        "cooling_rate",
+        "冷却速率"
+      ],
+      "expected_adjustment": "cooling_rate 提升至 8.0",
+      "batch_params": {
+        "batch_id": "B20260724-B",
+        "process_type": "heat_treatment",
+        "temperature": 848,
+        "holding_time": 149,
+        "cooling_rate": 4.0,
+        "raw_material_batch": "RM-2026-1009",
+        "start_time": "2026-07-20T08:00:00",
+        "end_time": "2026-07-11T09:30:00"
+      },
+      "status": "success",
+      "elapsed_seconds": 94.5,
+      "pred_root_cause": "冷却速率过低",
+      "pred_confidence": 0.85,
+      "proposals_count": 2,
+      "source": "llm",
+      "review_approved": true,
+      "retry_count": 0,
+      "hit_keywords": [
+        "冷却",
+        "cooling_rate",
+        "冷却速率"
+      ],
+      "hit_count": 3,
+      "total_keywords": 3,
+      "hit_rate": 1.0,
+      "loose_correct": true,
+      "strict_correct": true,
+      "final_answer_preview": "好的，操作员，我帮你把技术建议翻译成容易理解的说法。下面是两个调整方案，请看看哪个更合适。\n\n---\n\n### 建议一（推荐，置信度高）\n**结论：** 把冷却速度从现在的4.0℃/s提高到标准值5.0℃/s。这样硬度能从目前估计的48.2 HRc（偏软）提升到接近58.0 HRc（合格硬度），满足调质要求。\n\n**证据：**  \n- 当前速度比标准低了20%，这是导致硬度不足的主要原因。  \n-"
+    },
+    {
+      "case_id": "SC-025",
+      "batch_id": "B20260725-B",
+      "difficulty": "easy",
+      "expected_root_cause": "冷却速率过低",
+      "expected_keywords": [
+        "冷却",
+        "cooling_rate",
+        "冷却速率"
+      ],
+      "expected_adjustment": "cooling_rate 提升至 8.0",
+      "batch_params": {
+        "batch_id": "B20260725-B",
+        "process_type": "heat_treatment",
+        "temperature": 845,
+        "holding_time": 148,
+        "cooling_rate": 2.9,
+        "raw_material_batch": "RM-2026-6038",
+        "start_time": "2026-07-08T08:00:00",
+        "end_time": "2026-07-02T09:30:00"
+      },
+      "status": "success",
+      "elapsed_seconds": 54.9,
+      "pred_root_cause": "冷却速率过低",
+      "pred_confidence": 0.85,
+      "proposals_count": 2,
+      "source": "llm",
+      "review_approved": true,
+      "retry_count": 0,
+      "hit_keywords": [
+        "冷却",
+        "cooling_rate",
+        "冷却速率"
+      ],
+      "hit_count": 3,
+      "total_keywords": 3,
+      "hit_rate": 1.0,
+      "loose_correct": true,
+      "strict_correct": true,
+      "final_answer_preview": "您好，根据分析，当前冷却速率偏低是导致硬度不足的主要原因。我们有两个调整方案，请参考：\n\n---\n\n**方案一（推荐，置信度高）**  \n- **调整**：将冷却速率从2.9℃/s提高到5.0℃/s（标准值）  \n- **预期效果**：硬度从约52.3-54.1 HRc提升至接近标准58.0 HRc，马氏体转变更充分  \n- **风险**：若提升过快，可能增加工件变形或开裂风险；需确认淬火介质能力"
+    }
+  ]
+}

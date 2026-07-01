@@ -3,6 +3,7 @@
 用法:
     python scripts/run_m2_eval.py             # 全新评估
     python scripts/run_m2_eval.py --resume    # 跳过已完成的用例
+    python scripts/run_m2_eval.py --ids SC-017 SC-024 SC-025  # 指定用例快速验证
 """
 import subprocess
 import sys
@@ -16,13 +17,23 @@ os.chdir(PROJECT_ROOT)
 # 是否 resume 模式
 resume_mode = "--resume" in sys.argv
 
+# 提取 --ids 后的用例 ID
+ids_mode = "--ids" in sys.argv
+ids_list = []
+if ids_mode:
+    idx = sys.argv.index("--ids")
+    ids_list = [a for a in sys.argv[idx + 1:] if a.startswith("SC-")]
+
 log_file = PROJECT_ROOT / "data" / "eval_m2_log.txt"
 
 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-mode_str = "resume" if resume_mode else "fresh"
+mode_str = "resume" if resume_mode else ("ids" if ids_mode else "fresh")
 cmd_args = [sys.executable, "eval/run_eval.py", "--flow", "parallel"]
 if resume_mode:
     cmd_args.append("--resume")
+if ids_mode and ids_list:
+    cmd_args.append("--ids")
+    cmd_args.extend(ids_list)
 
 # resume 模式追加日志，fresh 模式覆盖
 log_mode = "a" if resume_mode else "w"

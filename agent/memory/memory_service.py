@@ -313,6 +313,126 @@ class MemoryService:
             logger.error(f"更新置信度失败: {e}")
             return False
 
+    # ===== 列表查询（M3-12 记忆可视化）=====
+
+    def list_all_episodic(self, limit: int = 100) -> list[dict]:
+        """列出全部短期记忆（按时间倒序）
+
+        Args:
+            limit: 最大返回数量
+
+        Returns:
+            记录列表（含 record_id/batch_id/defect_type/root_cause/solution/created_at/quality_score）
+        """
+        cur = self.db.execute(
+            "SELECT * FROM episodic ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        )
+        columns = [d[0] for d in cur.description]
+        return [dict(zip(columns, row)) for row in cur.fetchall()]
+
+    def list_all_feedback(self, limit: int = 100) -> list[dict]:
+        """列出全部用户反馈（按时间倒序）"""
+        cur = self.db.execute(
+            "SELECT * FROM feedback ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        )
+        columns = [d[0] for d in cur.description]
+        return [dict(zip(columns, row)) for row in cur.fetchall()]
+
+    def list_all_semantic(self, limit: int = 100) -> list[dict]:
+        """列出全部长期记忆（Chroma 案例）
+
+        Args:
+            limit: 最大返回数量
+
+        Returns:
+            案例列表（含 id/document/metadata）
+        """
+        self._ensure_chroma()
+        if self._collection is None:
+            return []
+
+        try:
+            # Chroma get 不传 ids 时返回全部（受 limit 限制）
+            result = self._collection.get(limit=limit, include=["metadatas", "documents"])
+            ids = result.get("ids", [])
+            documents = result.get("documents", [])
+            metadatas = result.get("metadatas", [])
+            return [
+                {
+                    "id": ids[i] if i < len(ids) else "",
+                    "document": documents[i] if i < len(documents) else "",
+                    "metadata": metadatas[i] if i < len(metadatas) else {},
+                }
+                for i in range(len(ids))
+            ]
+        except Exception as e:
+            logger.error(f"列出长期记忆失败: {e}")
+            return []
+
+    def get_memory_stats(self) -> dict:
+        """获取记忆统计概览
+
+        Returns:
+            {
+                "episodic_count": int,
+                "feedback_count": int,
+                "semantic_count": int,
+                "defect_type_distribution": {defect_type: count},
+                "action_distribution": {action: count},
+                "avg_confidence": float,
+                "recent_episodic": [...],  # 最近 5 条
+                "recent_feedback": [...],  # 最近 5 条
+            }
+        """
+        # 短期记忆统计
+        cur = self.db.execute("SELECT COUNT(*) FROM episodic")
+        episodic_count = cur.fetchone()[0]
+
+        # 反馈统计
+        cur = self.db.execute("SELECT COUNT(*) FROM feedback")
+        feedback_count = cur.fetchone()[0]
+
+        # 缺陷类型分布
+        cur = self.db.execute(
+            "SELECT defect_type, COUNT(*) as cnt FROM episodic "
+            "WHERE defect_type IS NOT NULL GROUP BY defect_type ORDER BY cnt DESC"
+        )
+        defect_type_dist = {row[0]: row[1] for row in cur.fetchall()}
+
+        # 反馈动作分布
+        cur = self.db.execute(
+            "SELECT action, COUNT(*) as cnt FROM feedback "
+            "WHERE action IS NOT NULL GROUP BY action ORDER BY cnt DESC"
+        )
+        action_dist = {row[0]: row[1] for row in cur.fetchall()}
+
+        # 长期记忆统计
+        semantic_count = 0
+        avg_confidence = 0.0
+        semantic_records = self.list_all_semantic(limit=500)
+        if semantic_records:
+            semantic_count = len(semantic_records)
+            confidences = [
+                r["metadata"].get("confidence", 0.5)
+                for r in semantic_records
+                if isinstance(r.get("metadata"), dict)
+            ]
+            if confidences:
+                avg_confidence = sum(confidences) / len(confidences)
+
+        return {
+            "episodic_count": episodic_count,
+            "feedback_count": feedback_count,
+            "semantic_count": semantic_count,
+            "defect_type_distribution": defect_type_dist,
+            "action_distribution": action_dist,
+            "avg_confidence": round(avg_confidence, 3),
+            "recent_episodic": self.list_all_episodic(limit=5),
+            "recent_feedback": self.list_all_feedback(limit=5),
+        }
+
     # ===== 遗忘机制 =====
 
     def cleanup_expired(self) -> int:

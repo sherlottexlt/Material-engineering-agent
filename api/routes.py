@@ -212,6 +212,35 @@ async def list_cases(
     }
 
 
+# ===== M3-12 记忆可视化端点 =====
+
+@app.get("/api/v1/memory/stats")
+async def memory_stats():
+    """获取记忆统计概览（三层记忆总数 + 分布 + 最近记录）"""
+    return memory.get_memory_stats()
+
+
+@app.get("/api/v1/memory/episodic")
+async def list_episodic(limit: int = 100):
+    """列出全部短期记忆（SQLite episodic 表）"""
+    records = memory.list_all_episodic(limit=limit)
+    return {"total": len(records), "records": records}
+
+
+@app.get("/api/v1/memory/semantic")
+async def list_semantic(limit: int = 100):
+    """列出全部长期记忆（Chroma 案例库）"""
+    records = memory.list_all_semantic(limit=limit)
+    return {"total": len(records), "records": records}
+
+
+@app.get("/api/v1/memory/feedback")
+async def list_feedback(limit: int = 100):
+    """列出全部用户反馈"""
+    records = memory.list_all_feedback(limit=limit)
+    return {"total": len(records), "records": records}
+
+
 @app.websocket("/api/v1/stream")
 async def stream(ws: WebSocket):
     """实时推送执行过程

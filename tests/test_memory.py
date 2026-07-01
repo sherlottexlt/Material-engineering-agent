@@ -83,9 +83,16 @@ class _FakeChromaCollection:
 
 @pytest.fixture
 def memory(tmp_path):
-    """临时 MemoryService 实例（无 Chroma，长期记忆降级）"""
+    """临时 MemoryService 实例（无 Chroma，长期记忆降级）
+
+    注意：chromadb 安装后 MemoryService 会自动初始化 Chroma，
+    此 fixture 通过 mock _ensure_chroma 为 no-op + _collection = None 模拟降级模式。
+    """
     db_path = tmp_path / "test_memory.db"
     service = MemoryService(db_path=db_path, chroma_path=tmp_path / "chroma")
+    service._collection = None  # 强制降级模式
+    # 阻止 write_semantic/search_semantic 调用时重新初始化 Chroma
+    service._ensure_chroma = lambda: None
     yield service
     service.close()
 

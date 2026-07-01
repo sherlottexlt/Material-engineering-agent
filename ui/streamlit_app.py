@@ -14,6 +14,12 @@ MetaCraft Agent Streamlit UI（M1-22）
 用法：
     streamlit run ui/streamlit_app.py
 """
+import sys
+from pathlib import Path
+
+# 确保项目根目录在 sys.path 中（Streamlit 运行时脚本目录是 ui/，需补充父目录）
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import asyncio
 import json
 import time
@@ -502,6 +508,14 @@ st.caption("材料加工产线智能工艺优化 Agent")
 
 # ===== 侧栏 =====
 with st.sidebar:
+    # M3-12: 页面选择器（缺陷归因 / 记忆浏览）
+    page = st.radio(
+        "页面",
+        ["缺陷归因", "记忆浏览"],
+        help="切换主界面功能",
+    )
+
+    st.divider()
     st.header("设置")
 
     # 模式选择
@@ -558,6 +572,12 @@ with st.sidebar:
             st.rerun()
 
 # ===== 主区域 =====
+
+# M3-12: 记忆浏览页面
+if page == "记忆浏览":
+    from ui.memory_browser import render_memory_browser
+    render_memory_browser()
+    st.stop()
 
 st.header("缺陷归因")
 
