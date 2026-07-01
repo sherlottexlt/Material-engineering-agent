@@ -1,0 +1,92 @@
+version: "3.9"
+
+services:
+  # ===== Agent Application =====
+  app:
+    build: .
+    container_name: metacraft-app
+    ports:
+      - "8000:8000"
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+    depends_on:
+      - chroma
+      - postgres
+    restart: unless-stopped
+
+  # ===== Streamlit UI =====
+  ui:
+    build: .
+    container_name: metacraft-ui
+    command: streamlit run ui/streamlit_app.py --server.port=8501 --server.address=0.0.0.0
+    ports:
+      - "8501:8501"
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - app
+    restart: unless-stopped
+
+  # ===== Vector Database (Chroma) =====
+  chroma:
+    image: chromadb/chroma:latest
+    container_name: metacraft-chroma
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./data/chroma:/chroma/chroma
+    environment:
+      - ANONYMIZED_TELEMETRY=false
+    restart: unless-stopped
+
+  # ===== Relational Database (PostgreSQL) =====
+  postgres:
+    image: postgres:16
+    container_name: metacraft-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: metacraft
+      POSTGRES_USER: metacraft
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-metacraft_dev}
+    volumes:
+      - ./data/pg:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # ===== Observability (Langfuse) =====
+  langfuse:
+    image: langfuse/langfuse:latest
+    container_name: metacraft-langfuse
+    ports:
+      - "3000:3000"
+    env_file: .env
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  # ===== MCP Servers =====
+  mcp_mes:
+    build: .
+    container_name: metacraft-mcp-mes
+    command: python mcp_servers/mes_server.py
+    env_file: .env
+    restart: unless-stopped
+
+  mcp_metallurgy:
+    build: .
+    container_name: metacraft-mcp-metallurgy
+    command: python mcp_servers/metallurgy_server.py
+    env_file: .env
+    restart: unless-stopped
+
+  mcp_knowledge:
+    build: .
+    container_name: metacraft-mcp-knowledge
+    command: python mcp_servers/knowledge_server.py
+    env_file: .env
+    depends_on:
+      - chroma
+    restart: unless-stopped

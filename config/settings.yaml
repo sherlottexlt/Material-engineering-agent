@@ -1,0 +1,114 @@
+# MetaCraft Agent 全局配置
+# 环境变量优先级高于此文件
+
+app:
+  name: MetaCraft Agent
+  version: 0.1.0
+  environment: development  # development / staging / production
+  log_level: INFO
+
+# ===== LLM 配置 =====
+llm:
+  provider: siliconflow  # qwen / deepseek / openai / ollama / siliconflow
+  default_model: deepseek-ai/DeepSeek-V4-Flash
+  temperature: 0.0  # Agent 任务用 0 保证确定性
+  max_tokens: 4096
+  timeout: 60
+  retry:
+    max_attempts: 3
+    backoff_seconds: 2
+
+  # 各 Provider 模型映射
+  models:
+    qwen:
+      planner: qwen-max
+      executor: qwen-plus
+      reviewer: qwen-max
+      interaction: qwen-plus
+    deepseek:
+      planner: deepseek-chat
+      executor: deepseek-chat
+      reviewer: deepseek-chat
+      interaction: deepseek-chat
+    openai:
+      planner: gpt-4o
+      executor: gpt-4o-mini
+      reviewer: gpt-4o
+      interaction: gpt-4o-mini
+    ollama:
+      planner: qwen2.5:7b
+      executor: qwen2.5:7b
+      reviewer: qwen2.5:7b
+      interaction: qwen2.5:7b
+    siliconflow:
+      planner: deepseek-ai/DeepSeek-V4-Flash
+      executor: deepseek-ai/DeepSeek-V4-Flash
+      reviewer: deepseek-ai/DeepSeek-V4-Flash
+      interaction: deepseek-ai/DeepSeek-V4-Flash
+
+# ===== Agent 编排配置 =====
+orchestrator:
+  max_replan_attempts: 3      # 最大重新规划次数
+  max_total_steps: 15         # 单次任务最大步数
+  step_timeout: 120           # 单步超时（秒）
+  enable_parallel: true       # 启用并行 Sub-Agent
+  review_strict: true         # 审核 Agent 必须通过
+
+# ===== 记忆配置 =====
+memory:
+  working:
+    max_context_items: 20     # 工作记忆最多保留条目
+  episodic:
+    retention_days: 30        # 短期记忆保留天数
+    db_path: data/metacraft.db
+  semantic:
+    collection_name: metacraft_cases
+    top_k: 3                  # 检索返回数量
+    min_relevance: 0.7        # 最低相关度阈值
+
+# ===== MCP 工具配置 =====
+mcp:
+  servers:
+    mes:
+      command: python
+      args: ["mcp_servers/mes_server.py"]
+    metallurgy:
+      command: python
+      args: ["mcp_servers/metallurgy_server.py"]
+    knowledge:
+      command: python
+      args: ["mcp_servers/knowledge_server.py"]
+  timeout: 30
+
+# ===== RAG 配置 =====
+rag:
+  embedding_model: text-embedding-v3  # 通义 embedding
+  chunk_size: 512
+  chunk_overlap: 50
+  handbook_dir: data/handbooks
+
+# ===== 评估配置 =====
+evaluation:
+  dataset_path: eval/test_cases.json
+  metrics:
+    - attribution_accuracy
+    - adoption_rate
+    - response_time
+    - token_consumption
+  auto_collect_failures: true
+
+# ===== 工艺约束（示例：热处理）=====
+process_constraints:
+  heat_treatment:
+    temperature_min: 800
+    temperature_max: 1100
+    holding_time_min: 30
+    holding_time_max: 480
+    cooling_rate_min: 0.5
+    cooling_rate_max: 50
+
+# ===== 安全配置 =====
+security:
+  require_human_approval: true   # 参数调整必须人工确认
+  audit_log: true
+  sensitive_fields: [raw_material_batch, customer_info]

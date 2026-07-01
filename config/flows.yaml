@@ -1,0 +1,57 @@
+# MetaCraft Agent 协作流程配置（M2-11）
+# 不同场景可配不同协作流程，由 agent/flow_config.py 加载
+
+# 默认流程模式
+default_flow: parallel
+
+# ===== 流程定义 =====
+flows:
+  # M2 并行协作（默认）
+  parallel:
+    description: "M2 并行协作：planner → [data||mechanism||knowledge] → arbitrate → decision → review → interaction"
+    mode: parallel
+    parallel_agents: [data, mechanism, knowledge]
+    sequential_before: []           # 并行前串行执行的 Agent
+    sequential_after: [arbitrate, decision, review, interaction]
+    skip_agents: []                 # 跳过的 Agent
+    enable_arbitrate: true          # 是否启用冲突仲裁
+
+  # M1 线性顺序（向后兼容）
+  sequential:
+    description: "M1 线性顺序：planner → data → mechanism → knowledge → decision → review → interaction"
+    mode: sequential
+    parallel_agents: []
+    sequential_before: []
+    sequential_after: [data, mechanism, knowledge, decision, review, interaction]
+    skip_agents: []
+    enable_arbitrate: false
+
+  # 数据优先：先查数据，再并行机理和知识
+  data_first:
+    description: "数据优先：planner → data → [mechanism||knowledge] → decision → review → interaction"
+    mode: hybrid
+    parallel_agents: [mechanism, knowledge]
+    sequential_before: [data]       # 先串行执行 data
+    sequential_after: [decision, review, interaction]
+    skip_agents: []
+    enable_arbitrate: true
+
+  # 快速模式：跳过机理和知识，只查数据
+  quick:
+    description: "快速模式：planner → data → decision → review → interaction（跳过 mechanism/knowledge）"
+    mode: sequential
+    parallel_agents: []
+    sequential_before: []
+    sequential_after: [data, decision, review, interaction]
+    skip_agents: [mechanism, knowledge]
+    enable_arbitrate: false
+
+  # 知识密集：知识检索优先
+  knowledge_heavy:
+    description: "知识密集：planner → knowledge → [data||mechanism] → decision → review → interaction"
+    mode: hybrid
+    parallel_agents: [data, mechanism]
+    sequential_before: [knowledge]
+    sequential_after: [decision, review, interaction]
+    skip_agents: []
+    enable_arbitrate: true

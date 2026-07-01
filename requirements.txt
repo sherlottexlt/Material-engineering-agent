@@ -1,0 +1,46 @@
+# ===== Core Agent Framework =====
+langgraph==0.2.34
+langchain==0.3.4
+langchain-core==0.3.12
+langchain-openai==0.2.3
+
+# ===== LLM Providers =====
+openai==1.51.0
+dashscope==1.20.0          # 通义千问 SDK
+
+# ===== MCP (Model Context Protocol) =====
+mcp==0.9.0
+
+# ===== Memory & Vector Store =====
+chromadb==0.5.13
+
+# ===== Data Models & Validation =====
+pydantic==2.9.2
+pydantic-settings==2.5.2
+
+# ===== Web Framework =====
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+streamlit==1.39.0
+
+# ===== Database =====
+sqlalchemy==2.0.35
+psycopg2-binary==2.9.9      # PostgreSQL
+aiosqlite==0.20.0           # async SQLite
+
+# ===== Observability =====
+langsmith==0.1.142
+langfuse==2.51.0
+
+# ===== Utils =====
+pyyaml==6.0.2
+python-dotenv==1.0.1
+httpx==0.27.2
+tenacity==9.0.0            # retry logic
+loguru==0.7.2
+
+# ===== Dev & Test =====
+pytest==8.3.3
+pytest-asyncio==0.24.0
+ruff==0.6.9
+black==24.10.0

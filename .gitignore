@@ -1,0 +1,91 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+.installed.cfg
+*.egg
+
+# ===== Virtual Env =====
+venv/
+env/
+ENV/
+.venv/
+
+# ===== IDE =====
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ===== Environment & Secrets =====
+.env
+.env.local
+*.key
+*.pem
+
+# ===== Data & Database =====
+data/*.db
+data/chroma/
+data/pg/
+*.sqlite3
+
+# 临时调试脚本与日志（v1/v2 开发过程中产生的中间产物）
+data/_*.py
+data/_*.txt
+data/_*.xml
+data/_*.json
+data/get-pip.py
+data/pip*.txt
+data/pip_*.log
+data/*.log
+data/eval_*.txt
+data/eval_*.log
+data/eval_stdout.txt
+data/eval_pid.txt
+data/eval_smoke.txt
+data/eval_full_log.txt
+data/eval_one.txt
+data/run_*.txt
+data/test_*.txt
+data/th*.txt
+data/th2_*.txt
+data/index_sample.txt
+data/api_check.txt
+data/extract_wheels.txt
+data/fix_lxml.txt
+data/streamlit_check.txt
+data/streamlit_pid.txt
+data/st_page.txt
+data/wheel_*.txt
+data/tool_integration_log.md
+
+# 离线 whl 包（体积大，按需本地保留）
+data/wheels/
+
+# ===== Logs =====
+logs/
+*.log
+
+# ===== Test & Coverage =====
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+
+# ===== Jupyter =====
+.ipynb_checkpoints/
+
+# ===== LangSmith / Langfuse =====
+.langsmith/
+.langfuse/

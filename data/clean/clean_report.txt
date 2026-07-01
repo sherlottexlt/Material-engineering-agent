@@ -1,0 +1,17 @@
+数据清洗报告
+==========================================
+
+原始记录数: 50
+去重后记录数: 50
+重复记录数: 0
+异常值记录数: 0
+
+单位规范:
+  - temperature: ℃
+  - holding_time: min
+  - cooling_rate: ℃/s
+  - hardness: HRc
+
+清洗后文件:
+  - data\clean\batches_clean.csv
+  - data\clean\defects_clean.csv

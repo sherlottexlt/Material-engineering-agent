@@ -1,0 +1,1371 @@
+{
+  "version": "1.0",
+  "description": "MetaCraft Agent 种子评估案例 - 热处理硬度偏低场景（50 条）",
+  "standard_params": {
+    "temperature": 845,
+    "holding_time": 120,
+    "cooling_rate": 5.0,
+    "standard_hardness": 58.0
+  },
+  "total_cases": 50,
+  "category_stats": {
+    "保温时间不足": 15,
+    "冷却速率过低": 15,
+    "温度偏低": 10,
+    "保温时间不足+冷却速率过低": 4,
+    "冷却速率过低+温度偏低": 3,
+    "保温时间不足+温度偏低": 3
+  },
+  "cases": [
+    {
+      "case_id": "SC-001",
+      "batch_id": "B20260701-A",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260701-A 硬度偏低 2 HRc，请分析原因并给出调整建议",
+      "measured_value": 55.6,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260701-A",
+        "process_type": "heat_treatment",
+        "temperature": 844,
+        "holding_time": 80,
+        "cooling_rate": 5.7,
+        "raw_material_batch": "RM-2026-3286",
+        "start_time": "2026-07-24T08:00:00",
+        "end_time": "2026-07-04T09:30:00"
+      },
+      "expected_root_cause": "保温时间不足",
+      "expected_adjustment": "holding_time +50",
+      "expected_keywords": [
+        "保温",
+        "holding_time",
+        "时间不足",
+        "时间不够"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "case_id": "SC-002",
+      "batch_id": "B20260702-A",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260702-A 硬度偏低 5 HRc，请分析原因并给出调整建议",
+      "measured_value": 53.0,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260702-A",
+        "process_type": "heat_treatment",
+        "temperature": 848,
+        "holding_time": 81,
+        "cooling_rate": 5.3,
+        "raw_material_batch": "RM-2026-7912",
+        "start_time": "2026-07-02T08:00:00",
+        "end_time": "2026-07-01T09:30:00"
+      },
+      "expected_root_cause": "保温时间不足",
+      "expected_adjustment": "holding_time +49",
+      "expected_keywords": [
+        "保温",
+        "holding_time",
+        "时间不足",
+        "时间不够"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "case_id": "SC-003",
+      "batch_id": "B20260703-A",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260703-A 硬度偏低 3 HRc，请分析原因并给出调整建议",
+      "measured_value": 55.1,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260703-A",
+        "process_type": "heat_treatment",
+        "temperature": 848,
+        "holding_time": 62,
+        "cooling_rate": 6.8,
+        "raw_material_batch": "RM-2026-4257",
+        "start_time": "2026-07-23T08:00:00",
+        "end_time": "2026-07-21T09:30:00"
+      },
+      "expected_root_cause": "保温时间不足",
+      "expected_adjustment": "holding_time +68",
+      "expected_keywords": [
+        "保温",
+        "holding_time",
+        "时间不足",
+        "时间不够"
+      ],
+      "difficulty": "easy"
+    },
+    {
+      "case_id": "SC-004",
+      "batch_id": "B20260704-A",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260704-A 硬度偏低 4 HRc，请分析原因并给出调整建议",
+      "measured_value": 53.8,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260704-A",
+        "process_type": "heat_treatment",
+        "temperature": 843,
+        "holding_time": 82,
+        "cooling_rate": 6.3,
+        "raw_material_batch": "RM-2026-5557",
+        "start_time": "2026-07-26T08:00:00",
+        "end_time": "2026-07-28T09:30:00"
+      },
+      "expected_root_cause": "保温时间不足",
+      "expected_adjustment": "holding_time +48",
+      "expected_keywords": [
+        "保温",
+        "holding_time",
+        "时间不足",
+        "时间不够"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "case_id": "SC-005",
+      "batch_id": "B20260705-A",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260705-A 硬度偏低 5 HRc，请分析原因并给出调整建议",
+      "measured_value": 53.0,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260705-A",
+        "process_type": "heat_treatment",
+        "temperature": 842,
+        "holding_time": 60,
+        "cooling_rate": 7.1,
+        "raw_material_batch": "RM-2026-6574",
+        "start_time": "2026-07-09T08:00:00",
+        "end_time": "2026-07-05T09:30:00"
+      },
+      "expected_root_cause": "保温时间不足",
+      "expected_adjustment": "holding_time +70",
+      "expected_keywords": [
+        "保温",
+        "holding_time",
+        "时间不足",
+        "时间不够"
+      ],
+      "difficulty": "easy"
+    },
+    {
+      "case_id": "SC-006",
+      "batch_id": "B20260706-A",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260706-A 硬度偏低 6 HRc，请分析原因并给出调整建议",
+      "measured_value": 52.2,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260706-A",
+        "process_type": "heat_treatment",
+        "temperature": 845,
+        "holding_time": 66,
+        "cooling_rate": 5.3,
+        "raw_material_batch": "RM-2026-7224",
+        "start_time": "2026-07-04T08:00:00",
+        "end_time": "2026-07-12T09:30:00"
+      },
+      "expected_root_cause": "保温时间不足",
+      "expected_adjustment": "holding_time +64",
+      "expected_keywords": [
+        "保温",
+        "holding_time",
+        "时间不足",
+        "时间不够"
+      ],
+      "difficulty": "easy"
+    },
+    {
+      "case_id": "SC-007",
+      "batch_id": "B20260707-A",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260707-A 硬度偏低 3 HRc，请分析原因并给出调整建议",
+      "measured_value": 54.6,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260707-A",
+        "process_type": "heat_treatment",
+        "temperature": 844,
+        "holding_time": 87,
+        "cooling_rate": 7.4,
+        "raw_material_batch": "RM-2026-8527",
+        "start_time": "2026-07-18T08:00:00",
+        "end_time": "2026-07-04T09:30:00"
+      },
+      "expected_root_cause": "保温时间不足",
+      "expected_adjustment": "holding_time +43",
+      "expected_keywords": [
+        "保温",
+        "holding_time",
+        "时间不足",
+        "时间不够"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "case_id": "SC-008",
+      "batch_id": "B20260708-A",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260708-A 硬度偏低 4 HRc，请分析原因并给出调整建议",
+      "measured_value": 54.5,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260708-A",
+        "process_type": "heat_treatment",
+        "temperature": 848,
+        "holding_time": 89,
+        "cooling_rate": 5.9,
+        "raw_material_batch": "RM-2026-6925",
+        "start_time": "2026-07-19T08:00:00",
+        "end_time": "2026-07-07T09:30:00"
+      },
+      "expected_root_cause": "保温时间不足",
+      "expected_adjustment": "holding_time +41",
+      "expected_keywords": [
+        "保温",
+        "holding_time",
+        "时间不足",
+        "时间不够"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "case_id": "SC-009",
+      "batch_id": "B20260709-A",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260709-A 硬度偏低 2 HRc，请分析原因并给出调整建议",
+      "measured_value": 55.7,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260709-A",
+        "process_type": "heat_treatment",
+        "temperature": 850,
+        "holding_time": 82,
+        "cooling_rate": 5.7,
+        "raw_material_batch": "RM-2026-5741",
+        "start_time": "2026-07-03T08:00:00",
+        "end_time": "2026-07-28T09:30:00"
+      },
+      "expected_root_cause": "保温时间不足",
+      "expected_adjustment": "holding_time +48",
+      "expected_keywords": [
+        "保温",
+        "holding_time",
+        "时间不足",
+        "时间不够"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "case_id": "SC-010",
+      "batch_id": "B20260710-A",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260710-A 硬度偏低 6 HRc，请分析原因并给出调整建议",
+      "measured_value": 52.5,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260710-A",
+        "process_type": "heat_treatment",
+        "temperature": 846,
+        "holding_time": 67,
+        "cooling_rate": 5.8,
+        "raw_material_batch": "RM-2026-6977",
+        "start_time": "2026-07-06T08:00:00",
+        "end_time": "2026-07-12T09:30:00"
+      },
+      "expected_root_cause": "保温时间不足",
+      "expected_adjustment": "holding_time +63",
+      "expected_keywords": [
+        "保温",
+        "holding_time",
+        "时间不足",
+        "时间不够"
+      ],
+      "difficulty": "easy"
+    },
+    {
+      "case_id": "SC-011",
+      "batch_id": "B20260711-A",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260711-A 硬度偏低 3 HRc，请分析原因并给出调整建议",
+      "measured_value": 55.2,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260711-A",
+        "process_type": "heat_treatment",
+        "temperature": 844,
+        "holding_time": 71,
+        "cooling_rate": 7.1,
+        "raw_material_batch": "RM-2026-2169",
+        "start_time": "2026-07-20T08:00:00",
+        "end_time": "2026-07-21T09:30:00"
+      },
+      "expected_root_cause": "保温时间不足",
+      "expected_adjustment": "holding_time +59",
+      "expected_keywords": [
+        "保温",
+        "holding_time",
+        "时间不足",
+        "时间不够"
+      ],
+      "difficulty": "easy"
+    },
+    {
+      "case_id": "SC-012",
+      "batch_id": "B20260712-A",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260712-A 硬度偏低 4 HRc，请分析原因并给出调整建议",
+      "measured_value": 53.9,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260712-A",
+        "process_type": "heat_treatment",
+        "temperature": 843,
+        "holding_time": 65,
+        "cooling_rate": 5.5,
+        "raw_material_batch": "RM-2026-7216",
+        "start_time": "2026-07-09T08:00:00",
+        "end_time": "2026-07-21T09:30:00"
+      },
+      "expected_root_cause": "保温时间不足",
+      "expected_adjustment": "holding_time +65",
+      "expected_keywords": [
+        "保温",
+        "holding_time",
+        "时间不足",
+        "时间不够"
+      ],
+      "difficulty": "easy"
+    },
+    {
+      "case_id": "SC-013",
+      "batch_id": "B20260713-A",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260713-A 硬度偏低 4 HRc，请分析原因并给出调整建议",
+      "measured_value": 53.8,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260713-A",
+        "process_type": "heat_treatment",
+        "temperature": 850,
+        "holding_time": 82,
+        "cooling_rate": 6.0,
+        "raw_material_batch": "RM-2026-1916",
+        "start_time": "2026-07-08T08:00:00",
+        "end_time": "2026-07-27T09:30:00"
+      },
+      "expected_root_cause": "保温时间不足",
+      "expected_adjustment": "holding_time +48",
+      "expected_keywords": [
+        "保温",
+        "holding_time",
+        "时间不足",
+        "时间不够"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "case_id": "SC-014",
+      "batch_id": "B20260714-A",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260714-A 硬度偏低 5 HRc，请分析原因并给出调整建议",
+      "measured_value": 52.8,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260714-A",
+        "process_type": "heat_treatment",
+        "temperature": 846,
+        "holding_time": 61,
+        "cooling_rate": 5.8,
+        "raw_material_batch": "RM-2026-4456",
+        "start_time": "2026-07-19T08:00:00",
+        "end_time": "2026-07-23T09:30:00"
+      },
+      "expected_root_cause": "保温时间不足",
+      "expected_adjustment": "holding_time +69",
+      "expected_keywords": [
+        "保温",
+        "holding_time",
+        "时间不足",
+        "时间不够"
+      ],
+      "difficulty": "easy"
+    },
+    {
+      "case_id": "SC-015",
+      "batch_id": "B20260715-A",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260715-A 硬度偏低 3 HRc，请分析原因并给出调整建议",
+      "measured_value": 55.1,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260715-A",
+        "process_type": "heat_treatment",
+        "temperature": 847,
+        "holding_time": 70,
+        "cooling_rate": 6.2,
+        "raw_material_batch": "RM-2026-8517",
+        "start_time": "2026-07-05T08:00:00",
+        "end_time": "2026-07-09T09:30:00"
+      },
+      "expected_root_cause": "保温时间不足",
+      "expected_adjustment": "holding_time +60",
+      "expected_keywords": [
+        "保温",
+        "holding_time",
+        "时间不足",
+        "时间不够"
+      ],
+      "difficulty": "easy"
+    },
+    {
+      "case_id": "SC-016",
+      "batch_id": "B20260716-B",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260716-B 硬度偏低 7 HRc，请分析原因并给出调整建议",
+      "measured_value": 51.3,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260716-B",
+        "process_type": "heat_treatment",
+        "temperature": 848,
+        "holding_time": 128,
+        "cooling_rate": 1.5,
+        "raw_material_batch": "RM-2026-8019",
+        "start_time": "2026-07-19T08:00:00",
+        "end_time": "2026-07-13T09:30:00"
+      },
+      "expected_root_cause": "冷却速率过低",
+      "expected_adjustment": "cooling_rate 提升至 8.0",
+      "expected_keywords": [
+        "冷却",
+        "cooling_rate",
+        "冷却速率",
+        "冷速"
+      ],
+      "difficulty": "easy"
+    },
+    {
+      "case_id": "SC-017",
+      "batch_id": "B20260717-B",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260717-B 硬度偏低 8 HRc，请分析原因并给出调整建议",
+      "measured_value": 50.0,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260717-B",
+        "process_type": "heat_treatment",
+        "temperature": 842,
+        "holding_time": 136,
+        "cooling_rate": 2.4,
+        "raw_material_batch": "RM-2026-9085",
+        "start_time": "2026-07-03T08:00:00",
+        "end_time": "2026-07-25T09:30:00"
+      },
+      "expected_root_cause": "冷却速率过低",
+      "expected_adjustment": "cooling_rate 提升至 8.0",
+      "expected_keywords": [
+        "冷却",
+        "cooling_rate",
+        "冷却速率",
+        "冷速"
+      ],
+      "difficulty": "easy"
+    },
+    {
+      "case_id": "SC-018",
+      "batch_id": "B20260718-B",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260718-B 硬度偏低 4 HRc，请分析原因并给出调整建议",
+      "measured_value": 54.5,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260718-B",
+        "process_type": "heat_treatment",
+        "temperature": 850,
+        "holding_time": 125,
+        "cooling_rate": 1.2,
+        "raw_material_batch": "RM-2026-7916",
+        "start_time": "2026-07-20T08:00:00",
+        "end_time": "2026-07-03T09:30:00"
+      },
+      "expected_root_cause": "冷却速率过低",
+      "expected_adjustment": "cooling_rate 提升至 8.0",
+      "expected_keywords": [
+        "冷却",
+        "cooling_rate",
+        "冷却速率",
+        "冷速"
+      ],
+      "difficulty": "easy"
+    },
+    {
+      "case_id": "SC-019",
+      "batch_id": "B20260719-B",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260719-B 硬度偏低 6 HRc，请分析原因并给出调整建议",
+      "measured_value": 52.0,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260719-B",
+        "process_type": "heat_treatment",
+        "temperature": 847,
+        "holding_time": 136,
+        "cooling_rate": 2.5,
+        "raw_material_batch": "RM-2026-5119",
+        "start_time": "2026-07-18T08:00:00",
+        "end_time": "2026-07-28T09:30:00"
+      },
+      "expected_root_cause": "冷却速率过低",
+      "expected_adjustment": "cooling_rate 提升至 8.0",
+      "expected_keywords": [
+        "冷却",
+        "cooling_rate",
+        "冷却速率",
+        "冷速"
+      ],
+      "difficulty": "easy"
+    },
+    {
+      "case_id": "SC-020",
+      "batch_id": "B20260720-B",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260720-B 硬度偏低 6 HRc，请分析原因并给出调整建议",
+      "measured_value": 51.6,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260720-B",
+        "process_type": "heat_treatment",
+        "temperature": 841,
+        "holding_time": 141,
+        "cooling_rate": 4.7,
+        "raw_material_batch": "RM-2026-9797",
+        "start_time": "2026-07-25T08:00:00",
+        "end_time": "2026-07-09T09:30:00"
+      },
+      "expected_root_cause": "冷却速率过低",
+      "expected_adjustment": "cooling_rate 提升至 8.0",
+      "expected_keywords": [
+        "冷却",
+        "cooling_rate",
+        "冷却速率",
+        "冷速"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "case_id": "SC-021",
+      "batch_id": "B20260721-B",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260721-B 硬度偏低 5 HRc，请分析原因并给出调整建议",
+      "measured_value": 53.3,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260721-B",
+        "process_type": "heat_treatment",
+        "temperature": 844,
+        "holding_time": 133,
+        "cooling_rate": 4.0,
+        "raw_material_batch": "RM-2026-3591",
+        "start_time": "2026-07-15T08:00:00",
+        "end_time": "2026-07-01T09:30:00"
+      },
+      "expected_root_cause": "冷却速率过低",
+      "expected_adjustment": "cooling_rate 提升至 8.0",
+      "expected_keywords": [
+        "冷却",
+        "cooling_rate",
+        "冷却速率",
+        "冷速"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "case_id": "SC-022",
+      "batch_id": "B20260722-B",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260722-B 硬度偏低 7 HRc，请分析原因并给出调整建议",
+      "measured_value": 50.6,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260722-B",
+        "process_type": "heat_treatment",
+        "temperature": 844,
+        "holding_time": 136,
+        "cooling_rate": 4.7,
+        "raw_material_batch": "RM-2026-3927",
+        "start_time": "2026-07-17T08:00:00",
+        "end_time": "2026-07-04T09:30:00"
+      },
+      "expected_root_cause": "冷却速率过低",
+      "expected_adjustment": "cooling_rate 提升至 8.0",
+      "expected_keywords": [
+        "冷却",
+        "cooling_rate",
+        "冷却速率",
+        "冷速"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "case_id": "SC-023",
+      "batch_id": "B20260723-B",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260723-B 硬度偏低 4 HRc，请分析原因并给出调整建议",
+      "measured_value": 53.5,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260723-B",
+        "process_type": "heat_treatment",
+        "temperature": 850,
+        "holding_time": 136,
+        "cooling_rate": 4.4,
+        "raw_material_batch": "RM-2026-4258",
+        "start_time": "2026-07-05T08:00:00",
+        "end_time": "2026-07-12T09:30:00"
+      },
+      "expected_root_cause": "冷却速率过低",
+      "expected_adjustment": "cooling_rate 提升至 8.0",
+      "expected_keywords": [
+        "冷却",
+        "cooling_rate",
+        "冷却速率",
+        "冷速"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "case_id": "SC-024",
+      "batch_id": "B20260724-B",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260724-B 硬度偏低 6 HRc，请分析原因并给出调整建议",
+      "measured_value": 52.3,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260724-B",
+        "process_type": "heat_treatment",
+        "temperature": 848,
+        "holding_time": 149,
+        "cooling_rate": 4.0,
+        "raw_material_batch": "RM-2026-1009",
+        "start_time": "2026-07-20T08:00:00",
+        "end_time": "2026-07-11T09:30:00"
+      },
+      "expected_root_cause": "冷却速率过低",
+      "expected_adjustment": "cooling_rate 提升至 8.0",
+      "expected_keywords": [
+        "冷却",
+        "cooling_rate",
+        "冷却速率",
+        "冷速"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "case_id": "SC-025",
+      "batch_id": "B20260725-B",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260725-B 硬度偏低 4 HRc，请分析原因并给出调整建议",
+      "measured_value": 54.4,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260725-B",
+        "process_type": "heat_treatment",
+        "temperature": 845,
+        "holding_time": 148,
+        "cooling_rate": 2.9,
+        "raw_material_batch": "RM-2026-6038",
+        "start_time": "2026-07-08T08:00:00",
+        "end_time": "2026-07-02T09:30:00"
+      },
+      "expected_root_cause": "冷却速率过低",
+      "expected_adjustment": "cooling_rate 提升至 8.0",
+      "expected_keywords": [
+        "冷却",
+        "cooling_rate",
+        "冷却速率",
+        "冷速"
+      ],
+      "difficulty": "easy"
+    },
+    {
+      "case_id": "SC-026",
+      "batch_id": "B20260726-B",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260726-B 硬度偏低 6 HRc，请分析原因并给出调整建议",
+      "measured_value": 52.2,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260726-B",
+        "process_type": "heat_treatment",
+        "temperature": 841,
+        "holding_time": 122,
+        "cooling_rate": 1.9,
+        "raw_material_batch": "RM-2026-8962",
+        "start_time": "2026-07-27T08:00:00",
+        "end_time": "2026-07-03T09:30:00"
+      },
+      "expected_root_cause": "冷却速率过低",
+      "expected_adjustment": "cooling_rate 提升至 8.0",
+      "expected_keywords": [
+        "冷却",
+        "cooling_rate",
+        "冷却速率",
+        "冷速"
+      ],
+      "difficulty": "easy"
+    },
+    {
+      "case_id": "SC-027",
+      "batch_id": "B20260727-B",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260727-B 硬度偏低 6 HRc，请分析原因并给出调整建议",
+      "measured_value": 52.3,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260727-B",
+        "process_type": "heat_treatment",
+        "temperature": 842,
+        "holding_time": 124,
+        "cooling_rate": 4.8,
+        "raw_material_batch": "RM-2026-8787",
+        "start_time": "2026-07-18T08:00:00",
+        "end_time": "2026-07-06T09:30:00"
+      },
+      "expected_root_cause": "冷却速率过低",
+      "expected_adjustment": "cooling_rate 提升至 8.0",
+      "expected_keywords": [
+        "冷却",
+        "cooling_rate",
+        "冷却速率",
+        "冷速"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "case_id": "SC-028",
+      "batch_id": "B20260728-B",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260728-B 硬度偏低 7 HRc，请分析原因并给出调整建议",
+      "measured_value": 50.6,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260728-B",
+        "process_type": "heat_treatment",
+        "temperature": 846,
+        "holding_time": 150,
+        "cooling_rate": 2.0,
+        "raw_material_batch": "RM-2026-4470",
+        "start_time": "2026-07-18T08:00:00",
+        "end_time": "2026-07-25T09:30:00"
+      },
+      "expected_root_cause": "冷却速率过低",
+      "expected_adjustment": "cooling_rate 提升至 8.0",
+      "expected_keywords": [
+        "冷却",
+        "cooling_rate",
+        "冷却速率",
+        "冷速"
+      ],
+      "difficulty": "easy"
+    },
+    {
+      "case_id": "SC-029",
+      "batch_id": "B20260729-B",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260729-B 硬度偏低 4 HRc，请分析原因并给出调整建议",
+      "measured_value": 54.0,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260729-B",
+        "process_type": "heat_treatment",
+        "temperature": 844,
+        "holding_time": 132,
+        "cooling_rate": 3.8,
+        "raw_material_batch": "RM-2026-7118",
+        "start_time": "2026-07-15T08:00:00",
+        "end_time": "2026-07-17T09:30:00"
+      },
+      "expected_root_cause": "冷却速率过低",
+      "expected_adjustment": "cooling_rate 提升至 8.0",
+      "expected_keywords": [
+        "冷却",
+        "cooling_rate",
+        "冷却速率",
+        "冷速"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "case_id": "SC-030",
+      "batch_id": "B20260730-B",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260730-B 硬度偏低 4 HRc，请分析原因并给出调整建议",
+      "measured_value": 53.8,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260730-B",
+        "process_type": "heat_treatment",
+        "temperature": 841,
+        "holding_time": 130,
+        "cooling_rate": 2.8,
+        "raw_material_batch": "RM-2026-1344",
+        "start_time": "2026-07-19T08:00:00",
+        "end_time": "2026-07-18T09:30:00"
+      },
+      "expected_root_cause": "冷却速率过低",
+      "expected_adjustment": "cooling_rate 提升至 8.0",
+      "expected_keywords": [
+        "冷却",
+        "cooling_rate",
+        "冷却速率",
+        "冷速"
+      ],
+      "difficulty": "easy"
+    },
+    {
+      "case_id": "SC-031",
+      "batch_id": "B20260731-C",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260731-C 硬度偏低 4 HRc，请分析原因并给出调整建议",
+      "measured_value": 54.2,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260731-C",
+        "process_type": "heat_treatment",
+        "temperature": 814,
+        "holding_time": 120,
+        "cooling_rate": 5.2,
+        "raw_material_batch": "RM-2026-1964",
+        "start_time": "2026-07-08T08:00:00",
+        "end_time": "2026-07-03T09:30:00"
+      },
+      "expected_root_cause": "温度偏低",
+      "expected_adjustment": "temperature +41",
+      "expected_keywords": [
+        "温度",
+        "temperature",
+        "温度偏低",
+        "淬火温度"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "case_id": "SC-032",
+      "batch_id": "B20260732-C",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260732-C 硬度偏低 5 HRc，请分析原因并给出调整建议",
+      "measured_value": 53.4,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260732-C",
+        "process_type": "heat_treatment",
+        "temperature": 802,
+        "holding_time": 122,
+        "cooling_rate": 6.5,
+        "raw_material_batch": "RM-2026-5562",
+        "start_time": "2026-07-22T08:00:00",
+        "end_time": "2026-07-16T09:30:00"
+      },
+      "expected_root_cause": "温度偏低",
+      "expected_adjustment": "temperature +53",
+      "expected_keywords": [
+        "温度",
+        "temperature",
+        "温度偏低",
+        "淬火温度"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "case_id": "SC-033",
+      "batch_id": "B20260733-C",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260733-C 硬度偏低 4 HRc，请分析原因并给出调整建议",
+      "measured_value": 54.4,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260733-C",
+        "process_type": "heat_treatment",
+        "temperature": 813,
+        "holding_time": 143,
+        "cooling_rate": 7.8,
+        "raw_material_batch": "RM-2026-8744",
+        "start_time": "2026-07-08T08:00:00",
+        "end_time": "2026-07-26T09:30:00"
+      },
+      "expected_root_cause": "温度偏低",
+      "expected_adjustment": "temperature +42",
+      "expected_keywords": [
+        "温度",
+        "temperature",
+        "温度偏低",
+        "淬火温度"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "case_id": "SC-034",
+      "batch_id": "B20260734-C",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260734-C 硬度偏低 4 HRc，请分析原因并给出调整建议",
+      "measured_value": 53.6,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260734-C",
+        "process_type": "heat_treatment",
+        "temperature": 830,
+        "holding_time": 126,
+        "cooling_rate": 5.3,
+        "raw_material_batch": "RM-2026-8062",
+        "start_time": "2026-07-12T08:00:00",
+        "end_time": "2026-07-14T09:30:00"
+      },
+      "expected_root_cause": "温度偏低",
+      "expected_adjustment": "temperature +25",
+      "expected_keywords": [
+        "温度",
+        "temperature",
+        "温度偏低",
+        "淬火温度"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "case_id": "SC-035",
+      "batch_id": "B20260735-C",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260735-C 硬度偏低 3 HRc，请分析原因并给出调整建议",
+      "measured_value": 54.6,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260735-C",
+        "process_type": "heat_treatment",
+        "temperature": 826,
+        "holding_time": 143,
+        "cooling_rate": 5.2,
+        "raw_material_batch": "RM-2026-2612",
+        "start_time": "2026-07-02T08:00:00",
+        "end_time": "2026-07-13T09:30:00"
+      },
+      "expected_root_cause": "温度偏低",
+      "expected_adjustment": "temperature +29",
+      "expected_keywords": [
+        "温度",
+        "temperature",
+        "温度偏低",
+        "淬火温度"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "case_id": "SC-036",
+      "batch_id": "B20260736-C",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260736-C 硬度偏低 4 HRc，请分析原因并给出调整建议",
+      "measured_value": 53.6,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260736-C",
+        "process_type": "heat_treatment",
+        "temperature": 821,
+        "holding_time": 123,
+        "cooling_rate": 5.7,
+        "raw_material_batch": "RM-2026-4116",
+        "start_time": "2026-07-18T08:00:00",
+        "end_time": "2026-07-15T09:30:00"
+      },
+      "expected_root_cause": "温度偏低",
+      "expected_adjustment": "temperature +34",
+      "expected_keywords": [
+        "温度",
+        "temperature",
+        "温度偏低",
+        "淬火温度"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "case_id": "SC-037",
+      "batch_id": "B20260737-C",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260737-C 硬度偏低 3 HRc，请分析原因并给出调整建议",
+      "measured_value": 54.7,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260737-C",
+        "process_type": "heat_treatment",
+        "temperature": 808,
+        "holding_time": 128,
+        "cooling_rate": 6.4,
+        "raw_material_batch": "RM-2026-2235",
+        "start_time": "2026-07-15T08:00:00",
+        "end_time": "2026-07-26T09:30:00"
+      },
+      "expected_root_cause": "温度偏低",
+      "expected_adjustment": "temperature +47",
+      "expected_keywords": [
+        "温度",
+        "temperature",
+        "温度偏低",
+        "淬火温度"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "case_id": "SC-038",
+      "batch_id": "B20260738-C",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260738-C 硬度偏低 2 HRc，请分析原因并给出调整建议",
+      "measured_value": 55.8,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260738-C",
+        "process_type": "heat_treatment",
+        "temperature": 806,
+        "holding_time": 137,
+        "cooling_rate": 7.5,
+        "raw_material_batch": "RM-2026-2528",
+        "start_time": "2026-07-25T08:00:00",
+        "end_time": "2026-07-28T09:30:00"
+      },
+      "expected_root_cause": "温度偏低",
+      "expected_adjustment": "temperature +49",
+      "expected_keywords": [
+        "温度",
+        "temperature",
+        "温度偏低",
+        "淬火温度"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "case_id": "SC-039",
+      "batch_id": "B20260739-C",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260739-C 硬度偏低 2 HRc，请分析原因并给出调整建议",
+      "measured_value": 55.5,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260739-C",
+        "process_type": "heat_treatment",
+        "temperature": 815,
+        "holding_time": 135,
+        "cooling_rate": 6.4,
+        "raw_material_batch": "RM-2026-7570",
+        "start_time": "2026-07-02T08:00:00",
+        "end_time": "2026-07-06T09:30:00"
+      },
+      "expected_root_cause": "温度偏低",
+      "expected_adjustment": "temperature +40",
+      "expected_keywords": [
+        "温度",
+        "temperature",
+        "温度偏低",
+        "淬火温度"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "case_id": "SC-040",
+      "batch_id": "B20260740-C",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260740-C 硬度偏低 2 HRc，请分析原因并给出调整建议",
+      "measured_value": 56.0,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260740-C",
+        "process_type": "heat_treatment",
+        "temperature": 824,
+        "holding_time": 132,
+        "cooling_rate": 5.8,
+        "raw_material_batch": "RM-2026-8454",
+        "start_time": "2026-07-10T08:00:00",
+        "end_time": "2026-07-14T09:30:00"
+      },
+      "expected_root_cause": "温度偏低",
+      "expected_adjustment": "temperature +31",
+      "expected_keywords": [
+        "温度",
+        "temperature",
+        "温度偏低",
+        "淬火温度"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "case_id": "SC-041",
+      "batch_id": "B20260741-D",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260741-D 硬度偏低 7 HRc，请分析原因并给出调整建议",
+      "measured_value": 51.2,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260741-D",
+        "process_type": "heat_treatment",
+        "temperature": 848,
+        "holding_time": 81,
+        "cooling_rate": 3.5,
+        "raw_material_batch": "RM-2026-3536",
+        "start_time": "2026-07-07T08:00:00",
+        "end_time": "2026-07-10T09:30:00"
+      },
+      "expected_root_cause": "保温时间不足+冷却速率过低",
+      "expected_adjustment": "多参数协同调整",
+      "expected_keywords": [
+        "保温",
+        "冷却",
+        "holding_time",
+        "cooling_rate"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "case_id": "SC-042",
+      "batch_id": "B20260742-D",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260742-D 硬度偏低 5 HRc，请分析原因并给出调整建议",
+      "measured_value": 53.1,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260742-D",
+        "process_type": "heat_treatment",
+        "temperature": 801,
+        "holding_time": 138,
+        "cooling_rate": 3.6,
+        "raw_material_batch": "RM-2026-1998",
+        "start_time": "2026-07-24T08:00:00",
+        "end_time": "2026-07-11T09:30:00"
+      },
+      "expected_root_cause": "冷却速率过低+温度偏低",
+      "expected_adjustment": "多参数协同调整",
+      "expected_keywords": [
+        "冷却",
+        "温度",
+        "cooling_rate",
+        "temperature"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "case_id": "SC-043",
+      "batch_id": "B20260743-D",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260743-D 硬度偏低 4 HRc，请分析原因并给出调整建议",
+      "measured_value": 53.8,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260743-D",
+        "process_type": "heat_treatment",
+        "temperature": 830,
+        "holding_time": 76,
+        "cooling_rate": 7.8,
+        "raw_material_batch": "RM-2026-9701",
+        "start_time": "2026-07-06T08:00:00",
+        "end_time": "2026-07-02T09:30:00"
+      },
+      "expected_root_cause": "保温时间不足+温度偏低",
+      "expected_adjustment": "多参数协同调整",
+      "expected_keywords": [
+        "保温",
+        "温度",
+        "holding_time",
+        "temperature"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "case_id": "SC-044",
+      "batch_id": "B20260744-D",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260744-D 硬度偏低 8 HRc，请分析原因并给出调整建议",
+      "measured_value": 50.2,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260744-D",
+        "process_type": "heat_treatment",
+        "temperature": 841,
+        "holding_time": 87,
+        "cooling_rate": 1.7,
+        "raw_material_batch": "RM-2026-2113",
+        "start_time": "2026-07-22T08:00:00",
+        "end_time": "2026-07-28T09:30:00"
+      },
+      "expected_root_cause": "保温时间不足+冷却速率过低",
+      "expected_adjustment": "多参数协同调整",
+      "expected_keywords": [
+        "保温",
+        "冷却",
+        "holding_time",
+        "cooling_rate"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "case_id": "SC-045",
+      "batch_id": "B20260745-D",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260745-D 硬度偏低 5 HRc，请分析原因并给出调整建议",
+      "measured_value": 53.1,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260745-D",
+        "process_type": "heat_treatment",
+        "temperature": 803,
+        "holding_time": 150,
+        "cooling_rate": 4.1,
+        "raw_material_batch": "RM-2026-5033",
+        "start_time": "2026-07-19T08:00:00",
+        "end_time": "2026-07-20T09:30:00"
+      },
+      "expected_root_cause": "冷却速率过低+温度偏低",
+      "expected_adjustment": "多参数协同调整",
+      "expected_keywords": [
+        "冷却",
+        "温度",
+        "cooling_rate",
+        "temperature"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "case_id": "SC-046",
+      "batch_id": "B20260746-D",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260746-D 硬度偏低 4 HRc，请分析原因并给出调整建议",
+      "measured_value": 53.8,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260746-D",
+        "process_type": "heat_treatment",
+        "temperature": 805,
+        "holding_time": 73,
+        "cooling_rate": 7.0,
+        "raw_material_batch": "RM-2026-9565",
+        "start_time": "2026-07-11T08:00:00",
+        "end_time": "2026-07-09T09:30:00"
+      },
+      "expected_root_cause": "保温时间不足+温度偏低",
+      "expected_adjustment": "多参数协同调整",
+      "expected_keywords": [
+        "保温",
+        "温度",
+        "holding_time",
+        "temperature"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "case_id": "SC-047",
+      "batch_id": "B20260747-D",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260747-D 硬度偏低 5 HRc，请分析原因并给出调整建议",
+      "measured_value": 53.2,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260747-D",
+        "process_type": "heat_treatment",
+        "temperature": 845,
+        "holding_time": 67,
+        "cooling_rate": 1.9,
+        "raw_material_batch": "RM-2026-3144",
+        "start_time": "2026-07-22T08:00:00",
+        "end_time": "2026-07-21T09:30:00"
+      },
+      "expected_root_cause": "保温时间不足+冷却速率过低",
+      "expected_adjustment": "多参数协同调整",
+      "expected_keywords": [
+        "保温",
+        "冷却",
+        "holding_time",
+        "cooling_rate"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "case_id": "SC-048",
+      "batch_id": "B20260748-D",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260748-D 硬度偏低 5 HRc，请分析原因并给出调整建议",
+      "measured_value": 52.8,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260748-D",
+        "process_type": "heat_treatment",
+        "temperature": 810,
+        "holding_time": 149,
+        "cooling_rate": 3.6,
+        "raw_material_batch": "RM-2026-2188",
+        "start_time": "2026-07-01T08:00:00",
+        "end_time": "2026-07-15T09:30:00"
+      },
+      "expected_root_cause": "冷却速率过低+温度偏低",
+      "expected_adjustment": "多参数协同调整",
+      "expected_keywords": [
+        "冷却",
+        "温度",
+        "cooling_rate",
+        "temperature"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "case_id": "SC-049",
+      "batch_id": "B20260749-D",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260749-D 硬度偏低 6 HRc，请分析原因并给出调整建议",
+      "measured_value": 51.5,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260749-D",
+        "process_type": "heat_treatment",
+        "temperature": 806,
+        "holding_time": 62,
+        "cooling_rate": 6.6,
+        "raw_material_batch": "RM-2026-9288",
+        "start_time": "2026-07-09T08:00:00",
+        "end_time": "2026-07-05T09:30:00"
+      },
+      "expected_root_cause": "保温时间不足+温度偏低",
+      "expected_adjustment": "多参数协同调整",
+      "expected_keywords": [
+        "保温",
+        "温度",
+        "holding_time",
+        "temperature"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "case_id": "SC-050",
+      "batch_id": "B20260750-D",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260750-D 硬度偏低 8 HRc，请分析原因并给出调整建议",
+      "measured_value": 50.3,
+      "standard_value": 58.0,
+      "batch_params": {
+        "batch_id": "B20260750-D",
+        "process_type": "heat_treatment",
+        "temperature": 841,
+        "holding_time": 88,
+        "cooling_rate": 1.9,
+        "raw_material_batch": "RM-2026-5669",
+        "start_time": "2026-07-06T08:00:00",
+        "end_time": "2026-07-15T09:30:00"
+      },
+      "expected_root_cause": "保温时间不足+冷却速率过低",
+      "expected_adjustment": "多参数协同调整",
+      "expected_keywords": [
+        "保温",
+        "冷却",
+        "holding_time",
+        "cooling_rate"
+      ],
+      "difficulty": "hard"
+    }
+  ]
+}

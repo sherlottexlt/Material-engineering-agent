@@ -1,0 +1,62 @@
+RC=0
+============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-9.0.3, pluggy-1.6.0 -- C:\Users\meng'yu'shao'nian\AppData\Local\Programs\Python\Python312\python.exe
+cachedir: .pytest_cache
+rootdir: d:\app\trae-app\2
+plugins: anyio-4.13.0, langsmith-0.8.5, asyncio-1.3.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 49 items
+
+tests/test_handbook.py::TestParseText::test_parse_md_file PASSED         [  2%]
+tests/test_handbook.py::TestParseText::test_parse_txt_file PASSED        [  4%]
+tests/test_handbook.py::TestParseText::test_parse_empty_file PASSED      [  6%]
+tests/test_handbook.py::TestParseText::test_parse_unsupported_type PASSED [  8%]
+tests/test_handbook.py::TestChunkFragments::test_short_fragment_single_chunk PASSED [ 10%]
+tests/test_handbook.py::TestChunkFragments::test_long_fragment_sliding_window PASSED [ 12%]
+tests/test_handbook.py::TestChunkFragments::test_section_preserved PASSED [ 14%]
+tests/test_handbook.py::TestChunkFragments::test_chunk_ids_unique PASSED [ 16%]
+tests/test_handbook.py::TestBuildIndex::test_build_index_from_dir PASSED [ 18%]
+tests/test_handbook.py::TestBuildIndex::test_build_index_empty_dir PASSED [ 20%]
+tests/test_handbook.py::TestBuildIndex::test_make_chunk_structure PASSED [ 22%]
+tests/test_handbook.py::TestTokenizeQuery::test_chinese_query PASSED     [ 24%]
+tests/test_handbook.py::TestTokenizeQuery::test_english_query PASSED     [ 26%]
+tests/test_handbook.py::TestTokenizeQuery::test_mixed_query PASSED       [ 28%]
+tests/test_handbook.py::TestTokenizeQuery::test_dedup PASSED             [ 30%]
+tests/test_handbook.py::TestBM25Score::test_match_higher_than_no_match PASSED [ 32%]
+tests/test_handbook.py::TestBM25Score::test_no_match_returns_zero PASSED [ 34%]
+tests/test_handbook.py::TestBM25Score::test_empty_doc PASSED             [ 36%]
+tests/test_handbook.py::TestBM25Score::test_more_matches_higher_score PASSED [ 38%]
+tests/test_handbook.py::TestLoadIndex::test_load_existing_index PASSED   [ 40%]
+tests/test_handbook.py::TestLoadIndex::test_load_index_from_path PASSED  [ 42%]
+tests/test_handbook.py::TestLoadIndex::test_load_nonexistent_returns_none PASSED [ 44%]
+tests/test_tools.py::TestQueryBatchParams::test_known_mock_batch PASSED  [ 46%]
+tests/test_tools.py::TestQueryBatchParams::test_unknown_batch_returns_default PASSED [ 48%]
+tests/test_tools.py::TestQueryBatchParams::test_seed_case_batch PASSED   [ 51%]
+tests/test_tools.py::TestQueryDefectHistory::test_returns_all_defects PASSED [ 53%]
+tests/test_tools.py::TestQueryDefectHistory::test_filter_by_defect_type PASSED [ 55%]
+tests/test_tools.py::TestQueryDefectHistory::test_limit PASSED           [ 57%]
+tests/test_tools.py::TestRunMetallurgyModel::test_jmak_model PASSED      [ 59%]
+tests/test_tools.py::TestRunMetallurgyModel::test_jmak_low_temp_lower_fraction PASSED [ 61%]
+tests/test_tools.py::TestRunMetallurgyModel::test_jmak_missing_params PASSED [ 63%]
+tests/test_tools.py::TestRunMetallurgyModel::test_cooling_rate_model PASSED [ 65%]
+tests/test_tools.py::TestRunMetallurgyModel::test_cooling_rate_missing_param PASSED [ 67%]
+tests/test_tools.py::TestRunMetallurgyModel::test_hall_petch_model PASSED [ 69%]
+tests/test_tools.py::TestRunMetallurgyModel::test_unknown_model_type PASSED [ 71%]
+tests/test_tools.py::TestSearchHandbook::test_returns_results PASSED     [ 73%]
+tests/test_tools.py::TestSearchHandbook::test_relevance_sorting PASSED   [ 75%]
+tests/test_tools.py::TestSearchHandbook::test_top_k_limit PASSED         [ 77%]
+tests/test_tools.py::TestSearchHandbook::test_index_mode_returns_relevant PASSED [ 79%]
+tests/test_tools.py::TestSearchHandbook::test_index_mode_source_label PASSED [ 81%]
+tests/test_tools.py::TestSearchCases::test_returns_results PASSED        [ 83%]
+tests/test_tools.py::TestSearchCases::test_no_match_returns_fallback PASSED [ 85%]
+tests/test_tools.py::TestSearchCases::test_top_k_limit PASSED            [ 87%]
+tests/test_tools.py::TestCallTool::test_call_known_tool PASSED           [ 89%]
+tests/test_tools.py::TestCallTool::test_call_unknown_tool PASSED         [ 91%]
+tests/test_tools.py::TestCallTool::test_tool_registry_completeness PASSED [ 93%]
+tests/test_tools.py::TestInternalModels::test_jmak_model_directly PASSED [ 95%]
+tests/test_tools.py::TestInternalModels::test_cooling_rate_model_directly PASSED [ 97%]
+tests/test_tools.py::TestInternalModels::test_hall_petch_model_directly PASSED [100%]
+
+============================= 49 passed in 2.15s ==============================
+
+STDERR:

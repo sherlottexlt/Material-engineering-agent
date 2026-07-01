@@ -1,0 +1,117 @@
+{
+  "version": "1.0",
+  "description": "MetaCraft Agent 评估测试用例 - 热处理硬度偏低场景",
+  "total_cases": 10,
+  "test_cases": [
+    {
+      "case_id": "TC-001",
+      "batch_id": "B20260601-A",
+      "defect_type": "hardness_low",
+      "query": "批次 B20260601-A 硬度偏低 5 HRc",
+      "measured_value": 52.0,
+      "standard_value": 58.0,
+      "expected_root_cause": "保温时间不足",
+      "expected_adjustment": "holding_time +15",
+      "difficulty": "easy"
+    },
+    {
+      "case_id": "TC-002",
+      "batch_id": "B20260602-B",
+      "defect_type": "hardness_low",
+      "query": "硬度只有 50 HRc，标准是 58",
+      "measured_value": 50.0,
+      "standard_value": 58.0,
+      "expected_root_cause": "冷却速率过低",
+      "expected_adjustment": "cooling_rate increase",
+      "difficulty": "easy"
+    },
+    {
+      "case_id": "TC-003",
+      "batch_id": "B20260603-C",
+      "defect_type": "hardness_low",
+      "query": "这批料硬度偏低，可能是材料问题",
+      "measured_value": 55.0,
+      "standard_value": 58.0,
+      "expected_root_cause": "原材料成分偏差",
+      "expected_adjustment": "check raw material",
+      "difficulty": "medium"
+    },
+    {
+      "case_id": "TC-004",
+      "batch_id": "B20260604-A",
+      "defect_type": "hardness_low",
+      "query": "硬度偏低 3 HRc",
+      "measured_value": 55.0,
+      "standard_value": 58.0,
+      "expected_root_cause": "温度偏低",
+      "expected_adjustment": "temperature +20",
+      "difficulty": "medium"
+    },
+    {
+      "case_id": "TC-005",
+      "batch_id": "B20260605-D",
+      "defect_type": "hardness_low",
+      "query": "硬度不达标",
+      "measured_value": 53.0,
+      "standard_value": 58.0,
+      "expected_root_cause": "保温时间不足",
+      "expected_adjustment": "holding_time +20",
+      "difficulty": "easy"
+    },
+    {
+      "case_id": "TC-006",
+      "batch_id": "B20260606-B",
+      "defect_type": "hardness_low",
+      "query": "硬度偏低，同时有变形",
+      "measured_value": 54.0,
+      "standard_value": 58.0,
+      "expected_root_cause": "冷却速率过低导致组织转变不充分",
+      "expected_adjustment": "cooling_rate increase + check deformation",
+      "difficulty": "hard"
+    },
+    {
+      "case_id": "TC-007",
+      "batch_id": "B20260607-A",
+      "defect_type": "hardness_low",
+      "query": "连续两批硬度偏低",
+      "measured_value": 52.0,
+      "standard_value": 58.0,
+      "expected_root_cause": "设备温度漂移",
+      "expected_adjustment": "calibrate equipment + temperature +30",
+      "difficulty": "hard"
+    },
+    {
+      "case_id": "TC-008",
+      "batch_id": "B20260608-C",
+      "defect_type": "hardness_low",
+      "query": "硬度偏低 6 HRc",
+      "measured_value": 52.0,
+      "standard_value": 58.0,
+      "expected_root_cause": "保温时间严重不足",
+      "expected_adjustment": "holding_time +30",
+      "difficulty": "easy"
+    },
+    {
+      "case_id": "TC-009",
+      "batch_id": "B20260609-A",
+      "defect_type": "hardness_low",
+      "query": "硬度偏低，金相组织异常",
+      "measured_value": 54.0,
+      "standard_value": 58.0,
+      "expected_root_cause": "相变不完全",
+      "expected_adjustment": "holding_time +15 + temperature +10",
+      "difficulty": "hard"
+    },
+    {
+      "case_id": "TC-010",
+      "batch_id": "B20260610-B",
+      "defect_type": "hardness_low",
+      "query": "硬度偏低 2 HRc",
+      "measured_value": 56.0,
+      "standard_value": 58.0,
+      "expected_root_cause": "边界情况，参数轻微偏差",
+      "expected_adjustment": "holding_time +5",
+      "difficulty": "medium"
+    }
+  ]
+}
