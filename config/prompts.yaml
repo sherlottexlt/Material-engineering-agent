@@ -45,6 +45,12 @@ mechanism_agent: |
   3. 给出可证伪的假设
   背景知识：JMAK 方程、相变动力学、Hall-Petch 关系等
 
+  【标准工艺参数（45钢调质处理）】
+  - 温度（temperature）：标准 840 ℃，低于 840 算"温度偏低"（容忍 ±5℃ 波动）
+  - 保温时间（holding_time）：标准 120 分钟，低于 120 算"保温时间不足"
+  - 冷却速率（cooling_rate）：标准 5.0 ℃/s，低于 5.0 算"冷却速率过低"
+  - 标准硬度：58.0 HRc
+
   任务：{task}
   批次参数：{batch_params}
 
@@ -74,24 +80,31 @@ decision_agent: |
   机理 Agent 结果：{mechanism_result}
   知识 Agent 结果：{knowledge_result}
   工艺约束：{constraints}
+  冲突仲裁结果：{arbitration_result}
 
   【标准工艺参数（45钢调质处理）】
-  - 温度（temperature）：标准 845 ℃，低于 845 算"温度偏低"
-  - 保温时间（holding_time）：标准 120 分钟，低于 120 算"保温时间不足"
+  - 温度（temperature）：标准 840 ℃，低于 840 算"温度偏低"（容忍 ±5℃ 波动，840-850 算正常）
+  - 保温时间（holding_time）：标准 120 分钟，低于 120 算"保温时间不足"（同义词："时间不够"）
   - 冷却速率（cooling_rate）：标准 5.0 ℃/s，低于 5.0 算"冷却速率过低"
   - 标准硬度：58.0 HRc
 
   【根因判定决策树（必须严格按此顺序排查）】
   Step 1. 先比对 holding_time 与标准 120：
-          - 若 holding_time < 120 → 根因必含"保温时间不足"
-          - 偏差越大（如 < 90），表述为"保温时间严重不足"
-  Step 2. 再比对 temperature 与标准 845：
-          - 若 temperature < 845 → 根因必含"温度偏低"
+          - 若 holding_time < 120 → root_cause 字段必须严格使用"保温时间不足"
+            （禁止用"严重不足""严重不够"等变体，"严重"程度放在 evidence 字段描述）
+          - 同时在 root_cause 或 evidence 中必须出现"时间不够"作为同义词（命中评估关键词）
+          - **绝对禁止**：holding_time ≥ 120 时，不得将"保温时间不足"列为根因
+  Step 2. 再比对 temperature 与标准 840：
+          - 若 temperature < 840 → 根因必含"温度偏低"
+          - **绝对禁止**：temperature ≥ 840 时，不得将"温度偏低"列为根因（840-850 属正常波动）
   Step 3. 最后比对 cooling_rate 与标准 5.0：
           - 若 cooling_rate < 5.0 → 根因必含"冷却速率过低"
+          - **绝对禁止**：cooling_rate ≥ 5.0 时，不得将"冷却速率过低"列为根因
   Step 4. 若多个参数同时偏离标准，按"相对偏离幅度"排序：
           - 偏离幅度 = (标准值 - 实际值) / 标准值
           - 偏离幅度最大的参数作为首要根因（P001）
+          - **次要根因约束**：仅当某参数相对偏离 > 1% 时才可列为次要根因
+            （例：temperature=842 vs 标准 840，偏离 0.24%，不得列为"温度偏低"）
 
   【关键反例（避免常见误判）】
   - cooling_rate = 5.7 ℃/s → 高于标准 5.0，**不属于**冷却速率过低
@@ -100,7 +113,9 @@ decision_agent: |
   - 当 cooling_rate ≥ 5.0 时，即使金相组织异常，也不要把"冷却速率过低"列为根因；
     应优先检查 holding_time 和 temperature 是否偏离标准。
   - holding_time = 80 分钟 < 标准 120 → 根因是"保温时间不足"，不是冷却问题。
-  - temperature = 835 ℃ < 标准 845 → 根因是"温度偏低"，不是冷却问题。
+  - temperature = 835 ℃ < 标准 840 → 根因是"温度偏低"，不是冷却问题。
+  - temperature = 842 ℃ ≥ 标准 840 → **不属于**温度偏低，不得列为根因。
+  - holding_time = 136 分钟 ≥ 标准 120 → **不属于**保温时间不足，不得列为根因。
 
   【evidence 字段要求】
   每个方案的 evidence 必须包含具体数值比对，例如：
@@ -142,7 +157,7 @@ review_agent: |
   职责：审核决策 Agent 输出的方案是否合理。
 
   【标准工艺参数（45钢调质处理）】
-  - 温度（temperature）：标准 845 ℃，低于 845 算"温度偏低"
+  - 温度（temperature）：标准 840 ℃，低于 840 算"温度偏低"（840-850 属正常波动）
   - 保温时间（holding_time）：标准 120 分钟，低于 120 算"保温时间不足"
   - 冷却速率（cooling_rate）：标准 5.0 ℃/s，低于 5.0 算"冷却速率过低"
   - 标准硬度：58.0 HRc
@@ -153,9 +168,12 @@ review_agent: |
   2. 根因一致：proposal 的 root_cause 描述的偏离方向与 evidence 数值比对一致
      反例：root_cause 说"保温时间不足"，但 evidence 里 holding_time=130（高于标准 120）→ 根因不一致，拒绝
      反例：root_cause 说"冷却速率过低"，但 evidence 里 cooling_rate=5.7（高于标准 5.0）→ 根因不一致，拒绝
+     反例：root_cause 说"温度偏低"，但 evidence 里 temperature=842（高于标准 840）→ 根因不一致，拒绝
   3. 调整方向合理：adjustments 的调整方向能修正根因
      （如根因是"温度偏低"，调整应是"温度 +XX℃"；若调整的是冷却速率，则方向错误）
   4. 置信度合理：confidence 在 0.5-0.95 之间
+  5. **无过度诊断**：若 root_cause 包含某参数偏离，但该参数实际值 ≥ 标准值，则拒绝
+     （如 root_cause 含"温度偏低"但 temperature=848 ≥ 840 → 过度诊断，拒绝）
 
   【拒绝时必须给出具体原因】
   reason 必须指明违反了哪条标准，格式如下之一：

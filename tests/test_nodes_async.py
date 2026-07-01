@@ -15,7 +15,7 @@ import pytest
 
 
 class MockLLM:
-    """假 LLM，invoke 返回固定内容或抛异常"""
+    """假 LLM，invoke/ainvoke 返回固定内容或抛异常"""
 
     def __init__(self, content: str = "", raise_error: bool = False):
         self.content = content
@@ -27,6 +27,10 @@ class MockLLM:
             raise Exception("mock LLM error")
         self.invoked_prompts.append(prompt)
         return type("Response", (), {"content": self.content})()
+
+    async def ainvoke(self, prompt):
+        """异步版本，与 invoke 行为一致"""
+        return self.invoke(prompt)
 
 
 def _mock_get_prompt(name: str) -> str:

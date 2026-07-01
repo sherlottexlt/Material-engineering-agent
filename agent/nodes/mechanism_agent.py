@@ -5,6 +5,7 @@ Mechanism Agent 节点：冶金机理分析
 基于物理冶金原理，调用 JMAK 等机理模型验证假设，结论必须可证伪。
 M2 阶段：支持并行执行，自行查询 batch_params（不依赖 data_result）。
 """
+import asyncio
 import json
 from datetime import datetime
 
@@ -88,7 +89,7 @@ async def mechanism_agent(state: AgentState) -> dict:
         prompt += f"\n冷却速率模型输出: {json.dumps(cooling_output, ensure_ascii=False)}"
         prompt += "\n\n请基于以上模型输出，分析硬度偏低的机理原因，给出可证伪的假设。"
 
-        response = llm.invoke(prompt)
+        response = await llm.ainvoke(prompt)
         hypothesis = response.content if hasattr(response, "content") else str(response)
     except Exception as e:
         logger.error(f"[MechanismAgent] LLM 分析失败: {e}")

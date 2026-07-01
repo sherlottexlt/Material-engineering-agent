@@ -5,6 +5,7 @@ Review Agent 节点：审核校验
 质监员角色，保守挑刺，审核决策方案是否违反工艺约束、证据链是否完整。
 不通过时递增 retry_count，防止无限循环。
 """
+import asyncio
 import json
 
 from loguru import logger
@@ -41,7 +42,7 @@ async def review_agent(state: AgentState) -> dict:
             constraints=constraints,
         )
 
-        response = llm.invoke(prompt)
+        response = await llm.ainvoke(prompt)
         content = response.content if hasattr(response, "content") else str(response)
 
         # 尝试解析 JSON（支持 ```json 代码块包裹）

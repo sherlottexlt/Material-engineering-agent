@@ -1,5 +1,5 @@
 """
-MetaCraft Agent 跑批评估脚本（M1-24）
+MetaCraft Agent 跑批评估脚本（M1-24 / M2-14）
 
 对 seed_cases.json 中的 50 条用例逐条运行 Agent，
 对比预测根因与期望根因，计算准确率。
@@ -10,10 +10,11 @@ MetaCraft Agent 跑批评估脚本（M1-24）
 - 平均命中率：命中关键词数 / 期望关键词数
 
 用法：
-    python eval/run_eval.py                      # 跑全量 50 条
+    python eval/run_eval.py                      # 跑全量 50 条（M2 默认流程）
     python eval/run_eval.py --limit 5            # 只跑前 5 条（快速验证）
     python eval/run_eval.py --ids SC-001 SC-002  # 指定 case_id
-    python eval/run_eval.py --concurrency 3      # 并发数（默认 1，SiliconFlow 限流建议 ≤3）
+    python eval/run_eval.py --flow sequential    # 用 M1 线性流程
+    python eval/run_eval.py --flow parallel      # 用 M2 并行流程（默认）
     python eval/run_eval.py --resume             # 跳过已完成的用例（基于增量结果文件）
 """
 import argparse
@@ -54,8 +55,26 @@ logger.add(
 
 
 SEED_CASES_PATH = PROJECT_ROOT / "data" / "seed_cases" / "seed_cases.json"
-REPORT_PATH = PROJECT_ROOT / "data" / "eval_report.json"
-INCREMENTAL_PATH = PROJECT_ROOT / "data" / "eval_incremental.json"  # 增量保存
+
+# M2-14: 报告路径根据 flow_name 区分
+def _get_report_paths(flow_name: str) -> tuple[Path, Path, Path]:
+    """获取报告路径（JSON / 文本 / 增量）
+
+    M1 baseline 报告为 eval_report.json（不覆盖）。
+    M2 评估报告根据 flow_name 加后缀。
+    """
+    if flow_name == "parallel":
+        suffix = "_m2"  # M2 默认并行模式，区别于 M1 baseline
+    else:
+        suffix = f"_{flow_name}"
+    return (
+        PROJECT_ROOT / "data" / f"eval_report{suffix}.json",
+        PROJECT_ROOT / "data" / f"eval_report{suffix}.txt",
+        PROJECT_ROOT / "data" / f"eval_incremental{suffix}.json",
+    )
+
+# 默认路径（兼容旧代码）
+REPORT_PATH, _, INCREMENTAL_PATH = _get_report_paths("parallel")
 
 
 def load_seed_cases() -> list[dict]:
@@ -82,6 +101,7 @@ def create_initial_state(case: dict) -> AgentState:
         "data_result": None,
         "mechanism_result": None,
         "knowledge_result": None,
+        "arbitration_result": None,  # M2 新增
         "decision_result": None,
         "review_result": None,
         "proposal": None,
@@ -98,7 +118,8 @@ def extract_prediction_text(final_state: dict) -> str:
     """从 Agent 最终状态提取用于匹配的文本
 
     拼接 decision_result.proposals 的 root_cause + adjustments + expected_effect
-    + final_answer，作为匹配文本。
+    + evidence + final_answer，作为匹配文本。
+    M2 迭代优化：加入 evidence 字段，扩展关键词匹配范围。
     """
     parts = []
 
@@ -106,6 +127,12 @@ def extract_prediction_text(final_state: dict) -> str:
     for p in decision.get("proposals", []):
         parts.append(str(p.get("root_cause", "")))
         parts.append(str(p.get("expected_effect", "")))
+        # M2 迭代优化：加入 evidence 字段
+        evidence = p.get("evidence") or []
+        if isinstance(evidence, list):
+            parts.extend(str(e) for e in evidence)
+        elif isinstance(evidence, str):
+            parts.append(evidence)
         adjustments = p.get("adjustments") or {}
         for k, v in adjustments.items():
             parts.append(f"{k} {v}")
@@ -134,29 +161,34 @@ def match_keywords(pred_text: str, expected_keywords: list[str]) -> tuple[int, i
     return len(hit), len(expected_keywords), hit
 
 
-def _save_incremental(results: list[dict]):
+def _save_incremental(results: list[dict], incremental_path: Path = None):
     """增量保存结果，每跑完一条就写一次，避免中途崩溃丢失数据"""
-    INCREMENTAL_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(INCREMENTAL_PATH, "w", encoding="utf-8") as f:
+    path = incremental_path or INCREMENTAL_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
         json.dump({"results": results, "saved_at": time.strftime("%Y-%m-%d %H:%M:%S")}, f, ensure_ascii=False, indent=2, default=str)
 
 
-def _load_incremental() -> dict:
+def _load_incremental(incremental_path: Path = None) -> dict:
     """加载增量结果（用于 --resume）"""
-    if not INCREMENTAL_PATH.exists():
+    path = incremental_path or INCREMENTAL_PATH
+    if not path.exists():
         return {"results": []}
     try:
-        with open(INCREMENTAL_PATH, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception as e:
         logger.warning(f"加载增量结果失败: {e}")
         return {"results": []}
 
 
-async def run_single_case(case: dict, idx: int, total: int) -> dict:
+async def run_single_case(case: dict, idx: int, total: int, flow_name: str = None) -> dict:
     """跑单条用例
 
     每条用例构建全新的 orchestrator，避免单例的 MemorySaver 状态污染。
+
+    Args:
+        flow_name: 协作流程名（M2-14），None 时使用默认流程
 
     Returns:
         评估结果字典
@@ -186,8 +218,12 @@ async def run_single_case(case: dict, idx: int, total: int) -> dict:
 
     try:
         # 每条用例构建全新 orchestrator，避免 MemorySaver 状态污染
-        orchestrator = build_orchestrator()
-        final_state = await orchestrator.ainvoke(initial_state, config)
+        orchestrator = build_orchestrator(flow_name)
+        # M2 迭代修复：添加 300s 超时，防止 LLM 调用无限卡住
+        final_state = await asyncio.wait_for(
+            orchestrator.ainvoke(initial_state, config),
+            timeout=300,
+        )
         elapsed = round(time.time() - start, 1)
 
         pred_text = extract_prediction_text(final_state)
@@ -230,6 +266,21 @@ async def run_single_case(case: dict, idx: int, total: int) -> dict:
         print(f"         {marker} hit {hit_count}/{total_kw} ({hit_rate:.0%}) "
               f"| pred: {pred_root_cause[:40]} | elapsed {elapsed}s", flush=True)
 
+    except asyncio.TimeoutError:
+        elapsed = round(time.time() - start, 1)
+        logger.error(f"[run_single_case] {case_id} 超时 ({elapsed}s > 300s)")
+        result.update({
+            "status": "error",
+            "elapsed_seconds": elapsed,
+            "error": f"timeout ({elapsed}s > 300s limit)",
+            "loose_correct": False,
+            "strict_correct": False,
+            "hit_rate": 0.0,
+            "hit_count": 0,
+            "total_keywords": len(expected_keywords),
+        })
+        print(f"         [TIMEOUT] {case_id} exceeded 300s | elapsed {elapsed}s", flush=True)
+
     except Exception as e:
         elapsed = round(time.time() - start, 1)
         err_trace = traceback.format_exc()
@@ -250,42 +301,51 @@ async def run_single_case(case: dict, idx: int, total: int) -> dict:
     return result
 
 
-async def run_eval(cases: list[dict], concurrency: int = 1, resume_ids: set = None) -> list[dict]:
+async def run_eval(cases: list[dict], concurrency: int = 1, resume_ids: set = None,
+                   flow_name: str = None, incremental_path: Path = None,
+                   prior_results: list[dict] = None) -> list[dict]:
     """跑批评估
 
     Args:
         cases: 用例列表
         concurrency: 并发数
         resume_ids: 需要跳过的 case_id 集合（用于 --resume）
+        flow_name: 协作流程名（M2-14）
+        incremental_path: 增量保存路径
+        prior_results: resume 模式下已完成的旧结果（避免增量保存时覆盖）
 
     Returns:
-        每条用例的评估结果
+        全部用例的评估结果（含 prior_results + 本次新结果）
     """
     setup_tracing()
 
     total = len(cases)
+    inc_path = incremental_path or INCREMENTAL_PATH
     print(f"\n{'='*60}", flush=True)
-    print(f"  start eval: {total} cases, concurrency={concurrency}", flush=True)
+    print(f"  start eval: {total} cases, concurrency={concurrency}, flow={flow_name or 'default'}", flush=True)
     if resume_ids:
         print(f"  (skip {len(resume_ids)} already-done cases)", flush=True)
     print(f"{'='*60}\n", flush=True)
 
     # 串行执行（评估场景下并发容易触发 SiliconFlow 限流，且便于增量保存）
-    results = []
+    # M2 迭代修复：resume 模式下初始化 results 为 prior_results，
+    # 避免增量保存时只写新结果、覆盖旧结果导致数据丢失。
+    results = list(prior_results) if prior_results else []
     for idx, case in enumerate(cases, 1):
         # resume 模式：跳过已完成的用例
         if resume_ids and case["case_id"] in resume_ids:
             print(f"[{idx}/{total}] {case['case_id']} SKIP (already done)", flush=True)
             continue
 
-        r = await run_single_case(case, idx, total)
+        r = await run_single_case(case, idx, total, flow_name=flow_name)
         results.append(r)
 
-        # 增量保存：每跑完一条就写一次
-        _save_incremental(results)
+        # 增量保存：每跑完一条就写一次（含 prior_results，避免覆盖）
+        _save_incremental(results, inc_path)
 
         # 显式打印进度分隔
-        print(f"  -> {idx}/{total} done, saved to {INCREMENTAL_PATH.name}", flush=True)
+        done_count = len(results)
+        print(f"  -> {done_count}/{total} done, saved to {inc_path.name}", flush=True)
 
     return results
 
@@ -414,7 +474,14 @@ def main():
     parser.add_argument("--concurrency", type=int, default=1, help="并发数（默认 1）")
     parser.add_argument("--no-save", action="store_true", help="不保存报告文件")
     parser.add_argument("--resume", action="store_true", help="跳过已完成的用例（基于增量结果文件）")
+    parser.add_argument("--flow", type=str, default="parallel",
+                        help="协作流程名（parallel/sequential/data_first/quick/knowledge_heavy，默认 parallel）")
     args = parser.parse_args()
+
+    flow_name = args.flow
+    report_path, text_report_path, incremental_path = _get_report_paths(flow_name)
+    print(f"flow: {flow_name}", flush=True)
+    print(f"report paths: {report_path.name}, {text_report_path.name}, {incremental_path.name}", flush=True)
 
     # 加载用例
     all_cases = load_seed_cases()
@@ -439,28 +506,30 @@ def main():
     resume_ids = set()
     prior_results = []
     if args.resume:
-        incremental = _load_incremental()
+        incremental = _load_incremental(incremental_path)
         prior_results = incremental.get("results", [])
         resume_ids = {r["case_id"] for r in prior_results if r.get("status") == "success"}
         print(f"resume mode: {len(resume_ids)} cases already done, will skip", flush=True)
 
     # 跑批
     start_time = time.time()
-    new_results = asyncio.run(run_eval(cases, concurrency=args.concurrency, resume_ids=resume_ids))
+    # M2 迭代修复：传入 prior_results，让 run_eval 增量保存时包含旧结果
+    all_results = asyncio.run(run_eval(cases, concurrency=args.concurrency, resume_ids=resume_ids,
+                                       flow_name=flow_name, incremental_path=incremental_path,
+                                       prior_results=prior_results))
     total_elapsed = round(time.time() - start_time, 1)
-
-    # 合并 resume 的旧结果 + 本次新结果
-    all_results = prior_results + new_results
 
     # 汇总
     summary = compute_summary(all_results)
     summary["total_elapsed_seconds"] = total_elapsed
+    summary["flow_name"] = flow_name
 
     # 捕获 print_summary 输出，同时写终端和文件
     buffer = io.StringIO()
     with redirect_stdout(buffer):
         print_summary(summary, all_results)
         print(f"total elapsed: {total_elapsed}s")
+        print(f"flow: {flow_name}")
     report_text = buffer.getvalue()
     print(report_text, end="", flush=True)
 
@@ -470,19 +539,18 @@ def main():
             "summary": summary,
             "results": all_results,
         }
-        REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with open(REPORT_PATH, "w", encoding="utf-8") as f:
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(report_path, "w", encoding="utf-8") as f:
             json.dump(report, f, ensure_ascii=False, indent=2, default=str)
-        text_report_path = PROJECT_ROOT / "data" / "eval_report.txt"
         with open(text_report_path, "w", encoding="utf-8") as f:
             f.write(report_text)
-        print(f"JSON report: {REPORT_PATH}", flush=True)
+        print(f"JSON report: {report_path}", flush=True)
         print(f"Text report: {text_report_path}", flush=True)
 
         # 清理增量文件（全量报告已保存）
-        if INCREMENTAL_PATH.exists():
-            INCREMENTAL_PATH.unlink()
-            print(f"cleaned incremental file: {INCREMENTAL_PATH.name}", flush=True)
+        if incremental_path.exists():
+            incremental_path.unlink()
+            print(f"cleaned incremental file: {incremental_path.name}", flush=True)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ Reflector 节点：自我反思
 
 评估当前执行进度，判断是否需要重新规划。
 """
+import asyncio
 import json
 
 from loguru import logger
@@ -41,8 +42,7 @@ async def reflector(state: AgentState) -> dict:
             observations=observations,
         )
 
-        # TODO: 切换为 llm.ainvoke() 异步调用
-        response = llm.invoke(prompt)
+        response = await asyncio.wait_for(llm.ainvoke(prompt), timeout=120)
         content = response.content if hasattr(response, "content") else str(response)
 
         parsed = json.loads(content)

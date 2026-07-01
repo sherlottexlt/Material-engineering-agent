@@ -19,6 +19,7 @@ from models.entities import CaseRecord
 
 # 默认数据路径
 DEFAULT_DB_PATH = Path(__file__).parent.parent.parent / "data" / "metacraft.db"
+DEFAULT_CHROMA_PATH = Path(__file__).parent.parent.parent / "data" / "chroma"
 
 
 class MemoryService:
@@ -31,6 +32,7 @@ class MemoryService:
     def __init__(
         self,
         db_path: str | Path = DEFAULT_DB_PATH,
+        chroma_path: str | Path | None = None,
         chroma_collection: str = "metacraft_cases",
         retention_days: int = 30,
     ):
@@ -38,6 +40,8 @@ class MemoryService:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.retention_days = retention_days
         self.collection_name = chroma_collection
+        self.chroma_path = Path(chroma_path) if chroma_path else DEFAULT_CHROMA_PATH
+        self.chroma_path.mkdir(parents=True, exist_ok=True)
 
         # 初始化 SQLite
         self.db = sqlite3.connect(str(self.db_path))
@@ -46,6 +50,7 @@ class MemoryService:
         # 初始化 Chroma（延迟导入，避免无 chroma 时报错）
         self._chroma_client = None
         self._collection = None
+        self._ensure_chroma()
 
     def _init_db(self):
         """初始化短期记忆表结构"""
@@ -74,15 +79,15 @@ class MemoryService:
         self.db.commit()
 
     def _ensure_chroma(self):
-        """延迟初始化 Chroma 客户端"""
+        """初始化 Chroma 客户端（PersistentClient，数据持久化到磁盘）"""
         if self._collection is None:
             try:
                 import chromadb
-                self._chroma_client = chromadb.Client()
+                self._chroma_client = chromadb.PersistentClient(path=str(self.chroma_path))
                 self._collection = self._chroma_client.get_or_create_collection(
                     self.collection_name
                 )
-                logger.info(f"Chroma 集合已就绪: {self.collection_name}")
+                logger.info(f"Chroma 集合已就绪: {self.collection_name} @ {self.chroma_path}")
             except Exception as e:
                 logger.warning(f"Chroma 未就绪（降级模式）: {e}")
                 self._collection = None
@@ -167,12 +172,12 @@ class MemoryService:
             logger.warning("Chroma 不可用，跳过长期记忆写入")
             return False
 
-        document = f"{case.defect_type}\n{case.root_cause}\n{case.solution}"
+        document = f"{case.defect_type.value}\n{case.root_cause}\n{case.solution}"
         self._collection.add(
             ids=[case.case_id],
             documents=[document],
             metadatas=[{
-                "defect_type": case.defect_type,
+                "defect_type": case.defect_type.value,
                 "confidence": case.confidence,
                 "created_at": case.created_at.isoformat(),
                 "source": case.source,

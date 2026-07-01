@@ -151,12 +151,18 @@ class TestArbitrate:
 
     @pytest.mark.asyncio
     async def test_hardness_mismatch_conflict(self):
-        """JMAK 预测硬度 ≥ 58 但缺陷报告硬度偏低 → 冲突"""
+        """保温时间正常但 JMAK 预测硬度 < 58 → 机理数据不一致冲突
+
+        M2 迭代优化：修正 arbitrate 误报逻辑。
+        原逻辑（已废弃）：predicted_hardness ≥ 58 且缺陷为硬度偏低 → 冲突
+          问题：JMAK 对 holding_time 不敏感，holding_time 不足时仍预测 ≥ 58，导致每条都误报。
+        新逻辑：holding_time ≥ 120（正常）但 predicted_hardness < 58（不合格）→ 真正的机理数据不一致。
+        """
         from agent.nodes.coordinator import arbitrate
         state = {
-            "data_result": {},
+            "data_result": {"batch_params": {"holding_time": 120}},
             "mechanism_result": {
-                "jmak_output": {"outputs": {"predicted_hardness_HRc": 60.0}},
+                "jmak_output": {"outputs": {"predicted_hardness_HRc": 55.0}},
             },
             "knowledge_result": {"handbook_hits": {"total": 1}, "case_hits": {"total": 1}},
         }
@@ -276,6 +282,10 @@ class TestCollaborationGraph:
                     return type("R", (), {"content": '{"needs_replan": false, "reason": "已完成"}'})()
                 else:
                     return type("R", (), {"content": "机理分析：保温时间不足导致奥氏体转化不完全"})()
+
+            async def ainvoke(self, prompt):
+                """异步版本，与 invoke 行为一致"""
+                return self.invoke(prompt)
 
         mock_llm = MockLLM()
 

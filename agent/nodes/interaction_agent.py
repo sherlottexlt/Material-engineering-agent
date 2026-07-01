@@ -8,6 +8,7 @@
 - 提供确认/拒绝选项
 - LLM 不可用时降级为格式化输出
 """
+import asyncio
 import json
 from datetime import datetime
 
@@ -92,7 +93,7 @@ async def interaction_agent(state: AgentState) -> dict:
             proposal=json.dumps(proposal, ensure_ascii=False, default=str)
         )
 
-        response = llm.invoke(prompt)
+        response = await asyncio.wait_for(llm.ainvoke(prompt), timeout=120)
         final_answer = response.content if hasattr(response, "content") else str(response)
 
         logger.info("交互 Agent 完成：LLM 生成最终回答")

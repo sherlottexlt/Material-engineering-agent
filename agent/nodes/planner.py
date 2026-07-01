@@ -5,6 +5,7 @@ Planner 节点：任务拆解
 将用户问题拆解为 3-5 个有序子任务，作为后续 Sub-Agent 执行的蓝图。
 LLM 不可用时降级为默认 plan，确保流程不中断。
 """
+import asyncio
 import json
 
 from loguru import logger
@@ -46,7 +47,7 @@ async def planner(state: AgentState) -> dict:
         prompt_template = get_prompt("planner")
         prompt = prompt_template.format(query=query, batch_id=batch_id)
 
-        response = llm.invoke(prompt)
+        response = await llm.ainvoke(prompt)
         content = response.content if hasattr(response, "content") else str(response)
 
         parsed = extract_json(content)

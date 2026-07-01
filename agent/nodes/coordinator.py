@@ -49,15 +49,26 @@ async def arbitrate(state: AgentState) -> dict:
     # 注意：mechanism_result 目前不存 batch_params，跳过此检查
 
     # 检查 2: 机理预测与缺陷描述一致性
-    jmak_output = mechanism_result.get("jmak_output", {}).get("outputs", {})
-    predicted_hardness = jmak_output.get("predicted_hardness_HRc")
-    if predicted_hardness is not None and isinstance(predicted_hardness, (int, float)):
-        if predicted_hardness >= 58.0:
-            conflicts.append({
-                "type": "mechanism_data_mismatch",
-                "detail": f"JMAK 预测硬度 {predicted_hardness} HRc ≥ 标准 58.0，但缺陷报告为硬度偏低",
-                "severity": "high",
-            })
+    # 注意：JMAK 模型对 holding_time 不敏感（指数衰减快收敛），holding_time < 120 时
+    # 即使保温时间不足，JMAK 仍可能预测硬度 ≥ 58.0，这是模型局限而非真正冲突。
+    # 仅在 holding_time ≥ 120（保温时间正常）但预测硬度 < 58.0 时才标记冲突（反向逻辑）。
+    jmak_output = mechanism_result.get("jmak_output")
+    jmak_outputs = jmak_output.get("outputs", {}) if isinstance(jmak_output, dict) else {}
+    predicted_hardness = jmak_outputs.get("predicted_hardness_HRc") if isinstance(jmak_outputs, dict) else None
+    data_params = data_result.get("batch_params") or {}
+    if not isinstance(data_params, dict):
+        data_params = {}
+    holding_time = data_params.get("holding_time")
+    if (predicted_hardness is not None
+            and isinstance(predicted_hardness, (int, float))
+            and isinstance(holding_time, (int, float))
+            and holding_time >= 120
+            and predicted_hardness < 58.0):
+        conflicts.append({
+            "type": "mechanism_data_mismatch",
+            "detail": f"保温时间 {holding_time} 分钟正常，但 JMAK 预测硬度 {predicted_hardness} HRc < 标准 58.0，与缺陷报告不一致",
+            "severity": "high",
+        })
 
     # 检查 3: 知识检索结果是否为空
     handbook_total = knowledge_result.get("handbook_hits", {}).get("total", 0)
@@ -66,6 +77,50 @@ async def arbitrate(state: AgentState) -> dict:
         conflicts.append({
             "type": "knowledge_empty",
             "detail": "知识检索无结果，decision 需基于数据和机理自行判断",
+            "severity": "medium",
+        })
+
+    # 检查 4: 参数偏离分析（M2 修复：帮助 decision 避免过度诊断）
+    # 基于标准阈值（temp<840/holding<120/cooling<5.0）计算每个参数的偏离情况
+    # 供 decision 的 LLM 参考，避免边界值（如 temp=842）被误判为"温度偏低"
+    temperature = data_params.get("temperature")
+    cooling_rate = data_params.get("cooling_rate")
+    param_status = {}
+    if isinstance(temperature, (int, float)):
+        temp_dev = (840 - temperature) / 840 * 100 if temperature < 840 else 0
+        param_status["temperature"] = {
+            "value": temperature,
+            "standard": 840,
+            "deviation_pct": round(temp_dev, 2),
+            "is_low": temperature < 840,
+            "note": "温度偏低" if temperature < 840 else (
+                "边界值，属正常波动，不得列为温度偏低" if 840 <= temperature < 845 else "正常"
+            ),
+        }
+    if isinstance(holding_time, (int, float)):
+        hold_dev = (120 - holding_time) / 120 * 100 if holding_time < 120 else 0
+        param_status["holding_time"] = {
+            "value": holding_time,
+            "standard": 120,
+            "deviation_pct": round(hold_dev, 2),
+            "is_low": holding_time < 120,
+            "note": "保温时间不足" if holding_time < 120 else "正常",
+        }
+    if isinstance(cooling_rate, (int, float)):
+        cool_dev = (5.0 - cooling_rate) / 5.0 * 100 if cooling_rate < 5.0 else 0
+        param_status["cooling_rate"] = {
+            "value": cooling_rate,
+            "standard": 5.0,
+            "deviation_pct": round(cool_dev, 2),
+            "is_low": cooling_rate < 5.0,
+            "note": "冷却速率过低" if cooling_rate < 5.0 else "正常",
+        }
+
+    # 边界值温度警告：840-845 之间属正常波动，但 LLM 容易误判
+    if isinstance(temperature, (int, float)) and 840 <= temperature < 845:
+        conflicts.append({
+            "type": "borderline_temperature",
+            "detail": f"温度 {temperature}℃ 在边界区间（840-845），属正常波动，不得列为'温度偏低'",
             "severity": "medium",
         })
 
@@ -79,6 +134,7 @@ async def arbitrate(state: AgentState) -> dict:
             "conflicts": conflicts,
             "conflict_count": len(conflicts),
             "has_high_severity": any(c["severity"] == "high" for c in conflicts),
+            "param_status": param_status,
         }
     }
 

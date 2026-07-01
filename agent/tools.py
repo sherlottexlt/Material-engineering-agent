@@ -19,6 +19,8 @@ from typing import Optional
 
 from loguru import logger
 
+from agent.memory.memory_service import MemoryService
+
 
 # ===== 种子案例加载（评估用）=====
 _SEED_CASES_PATH = Path(__file__).parent.parent / "data" / "seed_cases" / "seed_cases.json"
@@ -438,18 +440,72 @@ def search_handbook(query: str, top_k: int = 3) -> dict:
     }
 
 
+# ===== 记忆服务（延迟初始化，与 memory_writer 共享数据路径）=====
+_memory_service: MemoryService | None = None
+
+
+def _get_memory_service() -> MemoryService:
+    """惰性获取 MemoryService 单例（与 memory_writer 共用同一数据路径）"""
+    global _memory_service
+    if _memory_service is None:
+        _memory_service = MemoryService()
+    return _memory_service
+
+
+def _set_memory_service(service: MemoryService | None) -> None:
+    """注入 MemoryService 实例（测试用，避免污染真实库）"""
+    global _memory_service
+    _memory_service = service
+
+
 def search_cases(query: str, top_k: int = 3) -> dict:
-    """检索历史案例（模拟关键词匹配）
+    """检索历史案例（优先走长期记忆语义检索，降级到 mock 关键词匹配）
 
     Args:
-        query: 检索关键词
+        query: 检索关键词 / 自然语言描述
         top_k: 返回条数
 
     Returns:
-        匹配的历史案例
+        匹配的历史案例，_source 标识来源：semantic_memory / mock_data
     """
     logger.info(f"[Tool] search_cases: {query}")
 
+    # 1. 优先走长期记忆（Chroma 语义检索）
+    try:
+        memory = _get_memory_service()
+        results = memory.search_semantic(query, top_k=top_k)
+        if results:
+            formatted = []
+            for r in results:
+                doc = r.get("document") or ""
+                meta = r.get("metadata") or {}
+                # document 格式: "defect_type\nroot_cause\nsolution"
+                parts = doc.split("\n", 2)
+                defect_type = parts[0] if len(parts) > 0 else meta.get("defect_type", "unknown")
+                root_cause = parts[1] if len(parts) > 1 else ""
+                solution = parts[2] if len(parts) > 2 else ""
+                distance = r.get("distance")
+                formatted.append({
+                    "record_id": r.get("id"),
+                    "defect_type": defect_type,
+                    "root_cause": root_cause,
+                    "solution": solution,
+                    "confidence": meta.get("confidence"),
+                    "created_at": meta.get("created_at"),
+                    "source": meta.get("source", "auto"),
+                    # 距离越小相关度越高，转换为 0-1 的相关度评分
+                    "relevance_score": round(1.0 - distance, 3) if distance is not None else None,
+                })
+            logger.info(f"[Tool] search_cases 语义检索命中 {len(formatted)} 条")
+            return {
+                "total": len(formatted),
+                "results": formatted,
+                "_source": "semantic_memory",
+            }
+    except Exception as e:
+        logger.warning(f"[Tool] 语义检索异常，降级到 mock: {e}")
+
+    # 2. 降级：mock 关键词匹配（保持向后兼容，Chroma 不可用时走这里）
     hits = []
     for defect in _MOCK_DEFECTS:
         text = f"{defect['defect_type']} {defect['root_cause']} {defect['solution']}"

@@ -60,6 +60,8 @@ def get_llm(role: str = "planner", temperature: Optional[float] = None) -> ChatO
     model_name = models.get(role, llm_config.get("default_model", "qwen-max"))
 
     temp = temperature if temperature is not None else llm_config.get("temperature", 0.0)
+    # M2 迭代修复：统一加 request_timeout，防止 LLM 调用无限卡住
+    request_timeout = llm_config.get("request_timeout", 120)
 
     # 根据 provider 构造不同的客户端
     if provider == "qwen":
@@ -68,6 +70,7 @@ def get_llm(role: str = "planner", temperature: Optional[float] = None) -> ChatO
             temperature=temp,
             openai_api_key=os.getenv("QWEN_API_KEY", ""),
             openai_api_base="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            request_timeout=request_timeout,
         )
     elif provider == "deepseek":
         return ChatOpenAI(
@@ -75,12 +78,14 @@ def get_llm(role: str = "planner", temperature: Optional[float] = None) -> ChatO
             temperature=temp,
             openai_api_key=os.getenv("DEEPSEEK_API_KEY", ""),
             openai_api_base="https://api.deepseek.com",
+            request_timeout=request_timeout,
         )
     elif provider == "openai":
         return ChatOpenAI(
             model=model_name,
             temperature=temp,
             openai_api_key=os.getenv("OPENAI_API_KEY", ""),
+            request_timeout=request_timeout,
         )
     elif provider == "ollama":
         # Ollama 通过 OpenAI 兼容 API 运行
@@ -90,6 +95,7 @@ def get_llm(role: str = "planner", temperature: Optional[float] = None) -> ChatO
             temperature=temp,
             openai_api_key="ollama",  # Ollama 不需要真实 key，但不能为空
             openai_api_base=base_url,
+            request_timeout=request_timeout,
         )
     elif provider == "siliconflow":
         # 硅基流动 OpenAI 兼容 API
@@ -98,6 +104,7 @@ def get_llm(role: str = "planner", temperature: Optional[float] = None) -> ChatO
             temperature=temp,
             openai_api_key=os.getenv("SILICONFLOW_API_KEY", ""),
             openai_api_base="https://api.siliconflow.cn/v1",
+            request_timeout=request_timeout,
         )
     else:
         raise ValueError(f"不支持的 LLM provider: {provider}，可选: qwen/deepseek/openai/ollama/siliconflow")
