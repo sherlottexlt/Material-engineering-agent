@@ -89,3 +89,9 @@ Thumbs.db
 # ===== LangSmith / Langfuse =====
 .langsmith/
 .langfuse/
+
+# ===== 简历相关文件（个人求职用，不上传仓库） =====
+RESUME_PROJECT.md
+PORTFOLIO.md
+resume*.md
+portfolio*.md
