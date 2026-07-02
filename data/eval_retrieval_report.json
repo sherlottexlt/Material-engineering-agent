@@ -1,0 +1,1849 @@
+{
+  "eval_id": "m3_retrieval_20260702_082344",
+  "timestamp": "2026-07-02T08:23:44.071498",
+  "seed_cases": "seed_cases.json",
+  "top_k": 3,
+  "acceptance_criterion": "Top-3 准确率 ≥ 80%",
+  "results": {
+    "symptom_mode": {
+      "mode": "symptom",
+      "top_k": 3,
+      "total_queries": 50,
+      "cases_written": 50,
+      "hit_at_1": 2,
+      "hit_at_1_rate": 0.04,
+      "hit_at_3": 4,
+      "hit_at_3_rate": 0.08,
+      "root_cause_match_at_3": 40,
+      "root_cause_match_at_3_rate": 0.8,
+      "mrr": 0.0533,
+      "details": [
+        {
+          "case_id": "SC-001",
+          "query": "硬度偏低 温度844 保温80分钟 冷却速率5.7",
+          "expected_root_cause": "保温时间不足",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-044",
+            "SC-047"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-002",
+          "query": "硬度偏低 温度848 保温81分钟 冷却速率5.3",
+          "expected_root_cause": "保温时间不足",
+          "retrieved_ids": [
+            "SC-044",
+            "SC-047",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-003",
+          "query": "硬度偏低 温度848 保温62分钟 冷却速率6.8",
+          "expected_root_cause": "保温时间不足",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-044",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-004",
+          "query": "硬度偏低 温度843 保温82分钟 冷却速率6.3",
+          "expected_root_cause": "保温时间不足",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-044",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-005",
+          "query": "硬度偏低 温度842 保温60分钟 冷却速率7.1",
+          "expected_root_cause": "保温时间不足",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-044",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-006",
+          "query": "硬度偏低 温度845 保温66分钟 冷却速率5.3",
+          "expected_root_cause": "保温时间不足",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-044",
+            "SC-047"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-007",
+          "query": "硬度偏低 温度844 保温87分钟 冷却速率7.4",
+          "expected_root_cause": "保温时间不足",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-047",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-008",
+          "query": "硬度偏低 温度848 保温89分钟 冷却速率5.9",
+          "expected_root_cause": "保温时间不足",
+          "retrieved_ids": [
+            "SC-044",
+            "SC-047",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-009",
+          "query": "硬度偏低 温度850 保温82分钟 冷却速率5.7",
+          "expected_root_cause": "保温时间不足",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-044",
+            "SC-047"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-010",
+          "query": "硬度偏低 温度846 保温67分钟 冷却速率5.8",
+          "expected_root_cause": "保温时间不足",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-044",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-011",
+          "query": "硬度偏低 温度844 保温71分钟 冷却速率7.1",
+          "expected_root_cause": "保温时间不足",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-044",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-012",
+          "query": "硬度偏低 温度843 保温65分钟 冷却速率5.5",
+          "expected_root_cause": "保温时间不足",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-047",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-013",
+          "query": "硬度偏低 温度850 保温82分钟 冷却速率6.0",
+          "expected_root_cause": "保温时间不足",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-047",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-014",
+          "query": "硬度偏低 温度846 保温61分钟 冷却速率5.8",
+          "expected_root_cause": "保温时间不足",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-044",
+            "SC-047"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-015",
+          "query": "硬度偏低 温度847 保温70分钟 冷却速率6.2",
+          "expected_root_cause": "保温时间不足",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-047",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-016",
+          "query": "硬度偏低 温度848 保温128分钟 冷却速率1.5",
+          "expected_root_cause": "冷却速率过低",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-044",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-017",
+          "query": "硬度偏低 温度842 保温136分钟 冷却速率2.4",
+          "expected_root_cause": "冷却速率过低",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-047",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-018",
+          "query": "硬度偏低 温度850 保温125分钟 冷却速率1.2",
+          "expected_root_cause": "冷却速率过低",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-044",
+            "SC-047"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-019",
+          "query": "硬度偏低 温度847 保温136分钟 冷却速率2.5",
+          "expected_root_cause": "冷却速率过低",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-044",
+            "SC-047"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-020",
+          "query": "硬度偏低 温度841 保温141分钟 冷却速率4.7",
+          "expected_root_cause": "冷却速率过低",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-044",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-021",
+          "query": "硬度偏低 温度844 保温133分钟 冷却速率4.0",
+          "expected_root_cause": "冷却速率过低",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-044",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-022",
+          "query": "硬度偏低 温度844 保温136分钟 冷却速率4.7",
+          "expected_root_cause": "冷却速率过低",
+          "retrieved_ids": [
+            "SC-044",
+            "SC-047",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-023",
+          "query": "硬度偏低 温度850 保温136分钟 冷却速率4.4",
+          "expected_root_cause": "冷却速率过低",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-044",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-024",
+          "query": "硬度偏低 温度848 保温149分钟 冷却速率4.0",
+          "expected_root_cause": "冷却速率过低",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-044",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-025",
+          "query": "硬度偏低 温度845 保温148分钟 冷却速率2.9",
+          "expected_root_cause": "冷却速率过低",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-044",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-026",
+          "query": "硬度偏低 温度841 保温122分钟 冷却速率1.9",
+          "expected_root_cause": "冷却速率过低",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-047",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-027",
+          "query": "硬度偏低 温度842 保温124分钟 冷却速率4.8",
+          "expected_root_cause": "冷却速率过低",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-044",
+            "SC-047"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-028",
+          "query": "硬度偏低 温度846 保温150分钟 冷却速率2.0",
+          "expected_root_cause": "冷却速率过低",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-047",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-029",
+          "query": "硬度偏低 温度844 保温132分钟 冷却速率3.8",
+          "expected_root_cause": "冷却速率过低",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-044",
+            "SC-047"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-030",
+          "query": "硬度偏低 温度841 保温130分钟 冷却速率2.8",
+          "expected_root_cause": "冷却速率过低",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-044",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-031",
+          "query": "硬度偏低 温度814 保温120分钟 冷却速率5.2",
+          "expected_root_cause": "温度偏低",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-044",
+            "SC-047"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": false
+        },
+        {
+          "case_id": "SC-032",
+          "query": "硬度偏低 温度802 保温122分钟 冷却速率6.5",
+          "expected_root_cause": "温度偏低",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-044",
+            "SC-047"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": false
+        },
+        {
+          "case_id": "SC-033",
+          "query": "硬度偏低 温度813 保温143分钟 冷却速率7.8",
+          "expected_root_cause": "温度偏低",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-044",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": false
+        },
+        {
+          "case_id": "SC-034",
+          "query": "硬度偏低 温度830 保温126分钟 冷却速率5.3",
+          "expected_root_cause": "温度偏低",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-044",
+            "SC-047"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": false
+        },
+        {
+          "case_id": "SC-035",
+          "query": "硬度偏低 温度826 保温143分钟 冷却速率5.2",
+          "expected_root_cause": "温度偏低",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-044",
+            "SC-047"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": false
+        },
+        {
+          "case_id": "SC-036",
+          "query": "硬度偏低 温度821 保温123分钟 冷却速率5.7",
+          "expected_root_cause": "温度偏低",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-047",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": false
+        },
+        {
+          "case_id": "SC-037",
+          "query": "硬度偏低 温度808 保温128分钟 冷却速率6.4",
+          "expected_root_cause": "温度偏低",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-047",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": false
+        },
+        {
+          "case_id": "SC-038",
+          "query": "硬度偏低 温度806 保温137分钟 冷却速率7.5",
+          "expected_root_cause": "温度偏低",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-044",
+            "SC-047"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": false
+        },
+        {
+          "case_id": "SC-039",
+          "query": "硬度偏低 温度815 保温135分钟 冷却速率6.4",
+          "expected_root_cause": "温度偏低",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-047",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": false
+        },
+        {
+          "case_id": "SC-040",
+          "query": "硬度偏低 温度824 保温132分钟 冷却速率5.8",
+          "expected_root_cause": "温度偏低",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-044",
+            "SC-047"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": false
+        },
+        {
+          "case_id": "SC-041",
+          "query": "硬度偏低 温度848 保温81分钟 冷却速率3.5",
+          "expected_root_cause": "保温时间不足+冷却速率过低",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-044",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": true,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-042",
+          "query": "硬度偏低 温度801 保温138分钟 冷却速率3.6",
+          "expected_root_cause": "冷却速率过低+温度偏低",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-044",
+            "SC-047"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-043",
+          "query": "硬度偏低 温度830 保温76分钟 冷却速率7.8",
+          "expected_root_cause": "保温时间不足+温度偏低",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-047",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-044",
+          "query": "硬度偏低 温度841 保温87分钟 冷却速率1.7",
+          "expected_root_cause": "保温时间不足+冷却速率过低",
+          "retrieved_ids": [
+            "SC-044",
+            "SC-047",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": true,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-045",
+          "query": "硬度偏低 温度803 保温150分钟 冷却速率4.1",
+          "expected_root_cause": "冷却速率过低+温度偏低",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-044",
+            "SC-047"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-046",
+          "query": "硬度偏低 温度805 保温73分钟 冷却速率7.0",
+          "expected_root_cause": "保温时间不足+温度偏低",
+          "retrieved_ids": [
+            "SC-005",
+            "SC-041",
+            "SC-044"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-047",
+          "query": "硬度偏低 温度845 保温67分钟 冷却速率1.9",
+          "expected_root_cause": "保温时间不足+冷却速率过低",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-044",
+            "SC-047"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-048",
+          "query": "硬度偏低 温度810 保温149分钟 冷却速率3.6",
+          "expected_root_cause": "冷却速率过低+温度偏低",
+          "retrieved_ids": [
+            "SC-044",
+            "SC-047",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-049",
+          "query": "硬度偏低 温度806 保温62分钟 冷却速率6.6",
+          "expected_root_cause": "保温时间不足+温度偏低",
+          "retrieved_ids": [
+            "SC-044",
+            "SC-047",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-050",
+          "query": "硬度偏低 温度841 保温88分钟 冷却速率1.9",
+          "expected_root_cause": "保温时间不足+冷却速率过低",
+          "retrieved_ids": [
+            "SC-041",
+            "SC-047",
+            "SC-050"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低",
+            "保温时间不足+冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": true,
+          "root_cause_match": true
+        }
+      ]
+    },
+    "root_cause_mode": {
+      "mode": "root_cause",
+      "top_k": 3,
+      "total_queries": 50,
+      "cases_written": 50,
+      "hit_at_1": 24,
+      "hit_at_1_rate": 0.48,
+      "hit_at_3": 34,
+      "hit_at_3_rate": 0.68,
+      "root_cause_match_at_3": 50,
+      "root_cause_match_at_3_rate": 1.0,
+      "mrr": 0.5667,
+      "details": [
+        {
+          "case_id": "SC-001",
+          "query": "硬度偏低 保温时间不足 holding_time +50",
+          "expected_root_cause": "保温时间不足",
+          "retrieved_ids": [
+            "SC-001",
+            "SC-015",
+            "SC-002"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足",
+            "保温时间不足",
+            "保温时间不足"
+          ],
+          "hit_at_1": true,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-002",
+          "query": "硬度偏低 保温时间不足 holding_time +49",
+          "expected_root_cause": "保温时间不足",
+          "retrieved_ids": [
+            "SC-002",
+            "SC-014",
+            "SC-007"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足",
+            "保温时间不足",
+            "保温时间不足"
+          ],
+          "hit_at_1": true,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-003",
+          "query": "硬度偏低 保温时间不足 holding_time +68",
+          "expected_root_cause": "保温时间不足",
+          "retrieved_ids": [
+            "SC-014",
+            "SC-003",
+            "SC-010"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足",
+            "保温时间不足",
+            "保温时间不足"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-004",
+          "query": "硬度偏低 保温时间不足 holding_time +48",
+          "expected_root_cause": "保温时间不足",
+          "retrieved_ids": [
+            "SC-004",
+            "SC-009",
+            "SC-013"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足",
+            "保温时间不足",
+            "保温时间不足"
+          ],
+          "hit_at_1": true,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-005",
+          "query": "硬度偏低 保温时间不足 holding_time +70",
+          "expected_root_cause": "保温时间不足",
+          "retrieved_ids": [
+            "SC-005",
+            "SC-014",
+            "SC-012"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足",
+            "保温时间不足",
+            "保温时间不足"
+          ],
+          "hit_at_1": true,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-006",
+          "query": "硬度偏低 保温时间不足 holding_time +64",
+          "expected_root_cause": "保温时间不足",
+          "retrieved_ids": [
+            "SC-006",
+            "SC-014",
+            "SC-003"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足",
+            "保温时间不足",
+            "保温时间不足"
+          ],
+          "hit_at_1": true,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-007",
+          "query": "硬度偏低 保温时间不足 holding_time +43",
+          "expected_root_cause": "保温时间不足",
+          "retrieved_ids": [
+            "SC-007",
+            "SC-008",
+            "SC-002"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足",
+            "保温时间不足",
+            "保温时间不足"
+          ],
+          "hit_at_1": true,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-008",
+          "query": "硬度偏低 保温时间不足 holding_time +41",
+          "expected_root_cause": "保温时间不足",
+          "retrieved_ids": [
+            "SC-008",
+            "SC-007",
+            "SC-002"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足",
+            "保温时间不足",
+            "保温时间不足"
+          ],
+          "hit_at_1": true,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-009",
+          "query": "硬度偏低 保温时间不足 holding_time +48",
+          "expected_root_cause": "保温时间不足",
+          "retrieved_ids": [
+            "SC-004",
+            "SC-009",
+            "SC-013"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足",
+            "保温时间不足",
+            "保温时间不足"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-010",
+          "query": "硬度偏低 保温时间不足 holding_time +63",
+          "expected_root_cause": "保温时间不足",
+          "retrieved_ids": [
+            "SC-014",
+            "SC-010",
+            "SC-003"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足",
+            "保温时间不足",
+            "保温时间不足"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-011",
+          "query": "硬度偏低 保温时间不足 holding_time +59",
+          "expected_root_cause": "保温时间不足",
+          "retrieved_ids": [
+            "SC-011",
+            "SC-014",
+            "SC-015"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足",
+            "保温时间不足",
+            "保温时间不足"
+          ],
+          "hit_at_1": true,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-012",
+          "query": "硬度偏低 保温时间不足 holding_time +65",
+          "expected_root_cause": "保温时间不足",
+          "retrieved_ids": [
+            "SC-012",
+            "SC-014",
+            "SC-010"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足",
+            "保温时间不足",
+            "保温时间不足"
+          ],
+          "hit_at_1": true,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-013",
+          "query": "硬度偏低 保温时间不足 holding_time +48",
+          "expected_root_cause": "保温时间不足",
+          "retrieved_ids": [
+            "SC-004",
+            "SC-009",
+            "SC-013"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足",
+            "保温时间不足",
+            "保温时间不足"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-014",
+          "query": "硬度偏低 保温时间不足 holding_time +69",
+          "expected_root_cause": "保温时间不足",
+          "retrieved_ids": [
+            "SC-014",
+            "SC-003",
+            "SC-010"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足",
+            "保温时间不足",
+            "保温时间不足"
+          ],
+          "hit_at_1": true,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-015",
+          "query": "硬度偏低 保温时间不足 holding_time +60",
+          "expected_root_cause": "保温时间不足",
+          "retrieved_ids": [
+            "SC-015",
+            "SC-011",
+            "SC-014"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足",
+            "保温时间不足",
+            "保温时间不足"
+          ],
+          "hit_at_1": true,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-016",
+          "query": "硬度偏低 冷却速率过低 cooling_rate 提升至 8.0",
+          "expected_root_cause": "冷却速率过低",
+          "retrieved_ids": [
+            "SC-021",
+            "SC-022",
+            "SC-025"
+          ],
+          "retrieved_root_causes": [
+            "冷却速率过低",
+            "冷却速率过低",
+            "冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-017",
+          "query": "硬度偏低 冷却速率过低 cooling_rate 提升至 8.0",
+          "expected_root_cause": "冷却速率过低",
+          "retrieved_ids": [
+            "SC-021",
+            "SC-022",
+            "SC-025"
+          ],
+          "retrieved_root_causes": [
+            "冷却速率过低",
+            "冷却速率过低",
+            "冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-018",
+          "query": "硬度偏低 冷却速率过低 cooling_rate 提升至 8.0",
+          "expected_root_cause": "冷却速率过低",
+          "retrieved_ids": [
+            "SC-021",
+            "SC-022",
+            "SC-025"
+          ],
+          "retrieved_root_causes": [
+            "冷却速率过低",
+            "冷却速率过低",
+            "冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-019",
+          "query": "硬度偏低 冷却速率过低 cooling_rate 提升至 8.0",
+          "expected_root_cause": "冷却速率过低",
+          "retrieved_ids": [
+            "SC-021",
+            "SC-022",
+            "SC-025"
+          ],
+          "retrieved_root_causes": [
+            "冷却速率过低",
+            "冷却速率过低",
+            "冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-020",
+          "query": "硬度偏低 冷却速率过低 cooling_rate 提升至 8.0",
+          "expected_root_cause": "冷却速率过低",
+          "retrieved_ids": [
+            "SC-021",
+            "SC-022",
+            "SC-025"
+          ],
+          "retrieved_root_causes": [
+            "冷却速率过低",
+            "冷却速率过低",
+            "冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-021",
+          "query": "硬度偏低 冷却速率过低 cooling_rate 提升至 8.0",
+          "expected_root_cause": "冷却速率过低",
+          "retrieved_ids": [
+            "SC-021",
+            "SC-022",
+            "SC-025"
+          ],
+          "retrieved_root_causes": [
+            "冷却速率过低",
+            "冷却速率过低",
+            "冷却速率过低"
+          ],
+          "hit_at_1": true,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-022",
+          "query": "硬度偏低 冷却速率过低 cooling_rate 提升至 8.0",
+          "expected_root_cause": "冷却速率过低",
+          "retrieved_ids": [
+            "SC-021",
+            "SC-022",
+            "SC-025"
+          ],
+          "retrieved_root_causes": [
+            "冷却速率过低",
+            "冷却速率过低",
+            "冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-023",
+          "query": "硬度偏低 冷却速率过低 cooling_rate 提升至 8.0",
+          "expected_root_cause": "冷却速率过低",
+          "retrieved_ids": [
+            "SC-021",
+            "SC-022",
+            "SC-025"
+          ],
+          "retrieved_root_causes": [
+            "冷却速率过低",
+            "冷却速率过低",
+            "冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-024",
+          "query": "硬度偏低 冷却速率过低 cooling_rate 提升至 8.0",
+          "expected_root_cause": "冷却速率过低",
+          "retrieved_ids": [
+            "SC-021",
+            "SC-022",
+            "SC-025"
+          ],
+          "retrieved_root_causes": [
+            "冷却速率过低",
+            "冷却速率过低",
+            "冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-025",
+          "query": "硬度偏低 冷却速率过低 cooling_rate 提升至 8.0",
+          "expected_root_cause": "冷却速率过低",
+          "retrieved_ids": [
+            "SC-021",
+            "SC-022",
+            "SC-025"
+          ],
+          "retrieved_root_causes": [
+            "冷却速率过低",
+            "冷却速率过低",
+            "冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-026",
+          "query": "硬度偏低 冷却速率过低 cooling_rate 提升至 8.0",
+          "expected_root_cause": "冷却速率过低",
+          "retrieved_ids": [
+            "SC-021",
+            "SC-022",
+            "SC-025"
+          ],
+          "retrieved_root_causes": [
+            "冷却速率过低",
+            "冷却速率过低",
+            "冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-027",
+          "query": "硬度偏低 冷却速率过低 cooling_rate 提升至 8.0",
+          "expected_root_cause": "冷却速率过低",
+          "retrieved_ids": [
+            "SC-021",
+            "SC-022",
+            "SC-025"
+          ],
+          "retrieved_root_causes": [
+            "冷却速率过低",
+            "冷却速率过低",
+            "冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-028",
+          "query": "硬度偏低 冷却速率过低 cooling_rate 提升至 8.0",
+          "expected_root_cause": "冷却速率过低",
+          "retrieved_ids": [
+            "SC-021",
+            "SC-022",
+            "SC-025"
+          ],
+          "retrieved_root_causes": [
+            "冷却速率过低",
+            "冷却速率过低",
+            "冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-029",
+          "query": "硬度偏低 冷却速率过低 cooling_rate 提升至 8.0",
+          "expected_root_cause": "冷却速率过低",
+          "retrieved_ids": [
+            "SC-021",
+            "SC-022",
+            "SC-025"
+          ],
+          "retrieved_root_causes": [
+            "冷却速率过低",
+            "冷却速率过低",
+            "冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-030",
+          "query": "硬度偏低 冷却速率过低 cooling_rate 提升至 8.0",
+          "expected_root_cause": "冷却速率过低",
+          "retrieved_ids": [
+            "SC-021",
+            "SC-022",
+            "SC-025"
+          ],
+          "retrieved_root_causes": [
+            "冷却速率过低",
+            "冷却速率过低",
+            "冷却速率过低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-031",
+          "query": "硬度偏低 温度偏低 temperature +41",
+          "expected_root_cause": "温度偏低",
+          "retrieved_ids": [
+            "SC-031",
+            "SC-033",
+            "SC-037"
+          ],
+          "retrieved_root_causes": [
+            "温度偏低",
+            "温度偏低",
+            "温度偏低"
+          ],
+          "hit_at_1": true,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-032",
+          "query": "硬度偏低 温度偏低 temperature +53",
+          "expected_root_cause": "温度偏低",
+          "retrieved_ids": [
+            "SC-032",
+            "SC-038",
+            "SC-037"
+          ],
+          "retrieved_root_causes": [
+            "温度偏低",
+            "温度偏低",
+            "温度偏低"
+          ],
+          "hit_at_1": true,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-033",
+          "query": "硬度偏低 温度偏低 temperature +42",
+          "expected_root_cause": "温度偏低",
+          "retrieved_ids": [
+            "SC-033",
+            "SC-031",
+            "SC-037"
+          ],
+          "retrieved_root_causes": [
+            "温度偏低",
+            "温度偏低",
+            "温度偏低"
+          ],
+          "hit_at_1": true,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-034",
+          "query": "硬度偏低 温度偏低 temperature +25",
+          "expected_root_cause": "温度偏低",
+          "retrieved_ids": [
+            "SC-034",
+            "SC-035",
+            "SC-036"
+          ],
+          "retrieved_root_causes": [
+            "温度偏低",
+            "温度偏低",
+            "温度偏低"
+          ],
+          "hit_at_1": true,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-035",
+          "query": "硬度偏低 温度偏低 temperature +29",
+          "expected_root_cause": "温度偏低",
+          "retrieved_ids": [
+            "SC-035",
+            "SC-036",
+            "SC-040"
+          ],
+          "retrieved_root_causes": [
+            "温度偏低",
+            "温度偏低",
+            "温度偏低"
+          ],
+          "hit_at_1": true,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-036",
+          "query": "硬度偏低 温度偏低 temperature +34",
+          "expected_root_cause": "温度偏低",
+          "retrieved_ids": [
+            "SC-036",
+            "SC-040",
+            "SC-035"
+          ],
+          "retrieved_root_causes": [
+            "温度偏低",
+            "温度偏低",
+            "温度偏低"
+          ],
+          "hit_at_1": true,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-037",
+          "query": "硬度偏低 温度偏低 temperature +47",
+          "expected_root_cause": "温度偏低",
+          "retrieved_ids": [
+            "SC-037",
+            "SC-038",
+            "SC-031"
+          ],
+          "retrieved_root_causes": [
+            "温度偏低",
+            "温度偏低",
+            "温度偏低"
+          ],
+          "hit_at_1": true,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-038",
+          "query": "硬度偏低 温度偏低 temperature +49",
+          "expected_root_cause": "温度偏低",
+          "retrieved_ids": [
+            "SC-038",
+            "SC-037",
+            "SC-033"
+          ],
+          "retrieved_root_causes": [
+            "温度偏低",
+            "温度偏低",
+            "温度偏低"
+          ],
+          "hit_at_1": true,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-039",
+          "query": "硬度偏低 温度偏低 temperature +40",
+          "expected_root_cause": "温度偏低",
+          "retrieved_ids": [
+            "SC-039",
+            "SC-031",
+            "SC-033"
+          ],
+          "retrieved_root_causes": [
+            "温度偏低",
+            "温度偏低",
+            "温度偏低"
+          ],
+          "hit_at_1": true,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-040",
+          "query": "硬度偏低 温度偏低 temperature +31",
+          "expected_root_cause": "温度偏低",
+          "retrieved_ids": [
+            "SC-040",
+            "SC-036",
+            "SC-035"
+          ],
+          "retrieved_root_causes": [
+            "温度偏低",
+            "温度偏低",
+            "温度偏低"
+          ],
+          "hit_at_1": true,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-041",
+          "query": "硬度偏低 保温时间不足+冷却速率过低 多参数协同调整",
+          "expected_root_cause": "保温时间不足+冷却速率过低",
+          "retrieved_ids": [
+            "SC-043",
+            "SC-046",
+            "SC-049"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+温度偏低",
+            "保温时间不足+温度偏低",
+            "保温时间不足+温度偏低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-042",
+          "query": "硬度偏低 冷却速率过低+温度偏低 多参数协同调整",
+          "expected_root_cause": "冷却速率过低+温度偏低",
+          "retrieved_ids": [
+            "SC-042",
+            "SC-045",
+            "SC-048"
+          ],
+          "retrieved_root_causes": [
+            "冷却速率过低+温度偏低",
+            "冷却速率过低+温度偏低",
+            "冷却速率过低+温度偏低"
+          ],
+          "hit_at_1": true,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-043",
+          "query": "硬度偏低 保温时间不足+温度偏低 多参数协同调整",
+          "expected_root_cause": "保温时间不足+温度偏低",
+          "retrieved_ids": [
+            "SC-043",
+            "SC-046",
+            "SC-049"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+温度偏低",
+            "保温时间不足+温度偏低",
+            "保温时间不足+温度偏低"
+          ],
+          "hit_at_1": true,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-044",
+          "query": "硬度偏低 保温时间不足+冷却速率过低 多参数协同调整",
+          "expected_root_cause": "保温时间不足+冷却速率过低",
+          "retrieved_ids": [
+            "SC-043",
+            "SC-046",
+            "SC-049"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+温度偏低",
+            "保温时间不足+温度偏低",
+            "保温时间不足+温度偏低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-045",
+          "query": "硬度偏低 冷却速率过低+温度偏低 多参数协同调整",
+          "expected_root_cause": "冷却速率过低+温度偏低",
+          "retrieved_ids": [
+            "SC-042",
+            "SC-045",
+            "SC-048"
+          ],
+          "retrieved_root_causes": [
+            "冷却速率过低+温度偏低",
+            "冷却速率过低+温度偏低",
+            "冷却速率过低+温度偏低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-046",
+          "query": "硬度偏低 保温时间不足+温度偏低 多参数协同调整",
+          "expected_root_cause": "保温时间不足+温度偏低",
+          "retrieved_ids": [
+            "SC-043",
+            "SC-046",
+            "SC-049"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+温度偏低",
+            "保温时间不足+温度偏低",
+            "保温时间不足+温度偏低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-047",
+          "query": "硬度偏低 保温时间不足+冷却速率过低 多参数协同调整",
+          "expected_root_cause": "保温时间不足+冷却速率过低",
+          "retrieved_ids": [
+            "SC-043",
+            "SC-046",
+            "SC-049"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+温度偏低",
+            "保温时间不足+温度偏低",
+            "保温时间不足+温度偏低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-048",
+          "query": "硬度偏低 冷却速率过低+温度偏低 多参数协同调整",
+          "expected_root_cause": "冷却速率过低+温度偏低",
+          "retrieved_ids": [
+            "SC-042",
+            "SC-045",
+            "SC-048"
+          ],
+          "retrieved_root_causes": [
+            "冷却速率过低+温度偏低",
+            "冷却速率过低+温度偏低",
+            "冷却速率过低+温度偏低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-049",
+          "query": "硬度偏低 保温时间不足+温度偏低 多参数协同调整",
+          "expected_root_cause": "保温时间不足+温度偏低",
+          "retrieved_ids": [
+            "SC-043",
+            "SC-046",
+            "SC-049"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+温度偏低",
+            "保温时间不足+温度偏低",
+            "保温时间不足+温度偏低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": true,
+          "root_cause_match": true
+        },
+        {
+          "case_id": "SC-050",
+          "query": "硬度偏低 保温时间不足+冷却速率过低 多参数协同调整",
+          "expected_root_cause": "保温时间不足+冷却速率过低",
+          "retrieved_ids": [
+            "SC-043",
+            "SC-046",
+            "SC-049"
+          ],
+          "retrieved_root_causes": [
+            "保温时间不足+温度偏低",
+            "保温时间不足+温度偏低",
+            "保温时间不足+温度偏低"
+          ],
+          "hit_at_1": false,
+          "hit_at_3": false,
+          "root_cause_match": true
+        }
+      ]
+    }
+  },
+  "summary": {
+    "symptom_mode": {
+      "root_cause_match_rate": 0.8,
+      "passed": true
+    },
+    "root_cause_mode": {
+      "root_cause_match_rate": 1.0,
+      "passed": true
+    }
+  }
+}
