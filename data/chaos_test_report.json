@@ -1,0 +1,301 @@
+{
+  "test_time": "2026-07-03T01:07:45.378231",
+  "config": {
+    "scenarios": [
+      "llm_failure",
+      "chroma_failure",
+      "sqlite_failure",
+      "combined_failure"
+    ],
+    "repeats": 1,
+    "endpoints": [
+      "auth",
+      "cases",
+      "dashboard",
+      "feedback",
+      "analyze"
+    ]
+  },
+  "baseline": {
+    "auth": {
+      "description": "权限查询（轻量，对照）",
+      "status_codes": [
+        200
+      ],
+      "avg_latency_ms": 12.82,
+      "body_snippet": "{\"user_id\": \"admin\", \"role\": \"admin\", \"allowed_lines\": [\"*\"], \"can_write\": true, \"can_delete\": true, \"available_lines\": [\"heat_treatment\", \"welding\"]}",
+      "error": null,
+      "degradation": "baseline"
+    },
+    "cases": {
+      "description": "案例查询（读 SQLite + Chroma）",
+      "status_codes": [
+        200
+      ],
+      "avg_latency_ms": 4.49,
+      "body_snippet": "{\"total\": 312, \"cases\": [{\"record_id\": \"ep_1783012041_bdc148\", \"batch_id\": \"B20250101-001\", \"defect_type\": \"hardness_low\", \"root_cause\": \"保温时间不足\", \"solution\": \"holding_time +45 分钟\", \"created_at\": \"2026-07-03 01:07:21.237190\", \"quality_score\": 0.9, \"line_id\": \"heat_treatment\"}, {\"record_id\": \"ep_1783",
+      "error": null,
+      "degradation": "baseline"
+    },
+    "dashboard": {
+      "description": "跨产线看板（读 SQLite + Chroma 全量扫描）",
+      "status_codes": [
+        200
+      ],
+      "avg_latency_ms": 9062.65,
+      "body_snippet": "{\"user_id\": \"admin\", \"days\": 30, \"lines\": [{\"line_id\": \"heat_treatment\", \"episodic_count\": 312, \"feedback_count\": 7, \"conflict_count\": 21, \"semantic_count\": 0, \"defect_distribution\": {\"hardness_low\": 312}, \"action_distribution\": {\"adopted\": 7}, \"adoption_rate\": 1.0, \"avg_confidence\": 0.0, \"name\": \"热",
+      "error": null,
+      "degradation": "baseline"
+    },
+    "feedback": {
+      "description": "反馈写入（写 SQLite）",
+      "status_codes": [
+        200
+      ],
+      "avg_latency_ms": 4626.28,
+      "body_snippet": "{\"success\": true, \"feedback_id\": \"fb_e81743e6\"}",
+      "error": null,
+      "degradation": "baseline"
+    },
+    "analyze": {
+      "description": "归因分析（调 LLM + 全链路）",
+      "status_codes": [],
+      "avg_latency_ms": 0,
+      "body_snippet": "",
+      "error": null,
+      "degradation": "skipped"
+    }
+  },
+  "results": {
+    "llm_failure": {
+      "description": "LLM 服务不可用",
+      "faults": [
+        "llm"
+      ],
+      "endpoints": {
+        "auth": {
+          "description": "权限查询（轻量，对照）",
+          "status_codes": [
+            200
+          ],
+          "avg_latency_ms": 3.26,
+          "body_snippet": "{\"user_id\": \"admin\", \"role\": \"admin\", \"allowed_lines\": [\"*\"], \"can_write\": true, \"can_delete\": true, \"available_lines\": [\"heat_treatment\", \"welding\"]}",
+          "error": null,
+          "degradation": "normal"
+        },
+        "cases": {
+          "description": "案例查询（读 SQLite + Chroma）",
+          "status_codes": [
+            200
+          ],
+          "avg_latency_ms": 5.45,
+          "body_snippet": "{\"total\": 312, \"cases\": [{\"record_id\": \"ep_1783012041_bdc148\", \"batch_id\": \"B20250101-001\", \"defect_type\": \"hardness_low\", \"root_cause\": \"保温时间不足\", \"solution\": \"holding_time +45 分钟\", \"created_at\": \"2026-07-03 01:07:21.237190\", \"quality_score\": 0.9, \"line_id\": \"heat_treatment\"}, {\"record_id\": \"ep_1783",
+          "error": null,
+          "degradation": "normal"
+        },
+        "dashboard": {
+          "description": "跨产线看板（读 SQLite + Chroma 全量扫描）",
+          "status_codes": [
+            200
+          ],
+          "avg_latency_ms": 9091.61,
+          "body_snippet": "{\"user_id\": \"admin\", \"days\": 30, \"lines\": [{\"line_id\": \"heat_treatment\", \"episodic_count\": 312, \"feedback_count\": 0, \"conflict_count\": 21, \"semantic_count\": 0, \"defect_distribution\": {\"hardness_low\": 312}, \"action_distribution\": {}, \"adoption_rate\": 0.0, \"avg_confidence\": 0.0, \"name\": \"热处理产线\"}, {\"li",
+          "error": null,
+          "degradation": "normal"
+        },
+        "feedback": {
+          "description": "反馈写入（写 SQLite）",
+          "status_codes": [
+            200
+          ],
+          "avg_latency_ms": 4624.97,
+          "body_snippet": "{\"success\": true, \"feedback_id\": \"fb_5fec00e6\"}",
+          "error": null,
+          "degradation": "normal"
+        },
+        "analyze": {
+          "description": "归因分析（调 LLM + 全链路）",
+          "status_codes": [
+            200
+          ],
+          "avg_latency_ms": 18288.37,
+          "body_snippet": "{\"trace_id\": \"trace_b6f4dd5ab0f1\", \"status\": \"completed\", \"message\": \"归因完成\", \"final_answer\": \"## 归因结果与参数调整建议\\n\\n### 方案 1：保温时间不足\\n**置信度**：高 (75%)\\n\\n**参数调整**：\\n  - holding_time: +45 分钟\\n\\n**预期效果**：保温时间从 90 提升至 135 分钟\\n**风险提示**：\\n  - 可能增加能耗\\n  - 需确认设备产能\\n**证据链**：\\n  - 当前保温时间 90 分钟 < 标准 120 分钟\\n\\n### 方",
+          "error": null,
+          "degradation": "degraded_ok"
+        }
+      }
+    },
+    "chroma_failure": {
+      "description": "向量库（Chroma）不可用",
+      "faults": [
+        "chroma"
+      ],
+      "endpoints": {
+        "auth": {
+          "description": "权限查询（轻量，对照）",
+          "status_codes": [
+            200
+          ],
+          "avg_latency_ms": 3.39,
+          "body_snippet": "{\"user_id\": \"admin\", \"role\": \"admin\", \"allowed_lines\": [\"*\"], \"can_write\": true, \"can_delete\": true, \"available_lines\": [\"heat_treatment\", \"welding\"]}",
+          "error": null,
+          "degradation": "normal"
+        },
+        "cases": {
+          "description": "案例查询（读 SQLite + Chroma）",
+          "status_codes": [
+            200
+          ],
+          "avg_latency_ms": 5.77,
+          "body_snippet": "{\"total\": 313, \"cases\": [{\"record_id\": \"ep_1783012106_95b643\", \"batch_id\": \"B20250101-001\", \"defect_type\": \"hardness_low\", \"root_cause\": \"保温时间不足\", \"solution\": \"holding_time +45 分钟\", \"created_at\": \"2026-07-03 01:08:26.455529\", \"quality_score\": 0.9, \"line_id\": \"heat_treatment\"}, {\"record_id\": \"ep_1783",
+          "error": null,
+          "degradation": "degraded_ok"
+        },
+        "dashboard": {
+          "description": "跨产线看板（读 SQLite + Chroma 全量扫描）",
+          "status_codes": [
+            200
+          ],
+          "avg_latency_ms": 9130.53,
+          "body_snippet": "{\"user_id\": \"admin\", \"days\": 30, \"lines\": [{\"line_id\": \"heat_treatment\", \"episodic_count\": 313, \"feedback_count\": 2, \"conflict_count\": 21, \"semantic_count\": 0, \"defect_distribution\": {\"hardness_low\": 313}, \"action_distribution\": {\"adopted\": 2}, \"adoption_rate\": 1.0, \"avg_confidence\": 0.0, \"name\": \"热",
+          "error": null,
+          "degradation": "degraded_ok"
+        },
+        "feedback": {
+          "description": "反馈写入（写 SQLite）",
+          "status_codes": [
+            200
+          ],
+          "avg_latency_ms": 4631.22,
+          "body_snippet": "{\"success\": true, \"feedback_id\": \"fb_b115cee3\"}",
+          "error": null,
+          "degradation": "normal"
+        },
+        "analyze": {
+          "description": "归因分析（调 LLM + 全链路）",
+          "status_codes": [],
+          "avg_latency_ms": 0,
+          "body_snippet": "",
+          "error": null,
+          "degradation": "skipped"
+        }
+      }
+    },
+    "sqlite_failure": {
+      "description": "SQLite 数据库不可用",
+      "faults": [
+        "sqlite"
+      ],
+      "endpoints": {
+        "auth": {
+          "description": "权限查询（轻量，对照）",
+          "status_codes": [
+            200
+          ],
+          "avg_latency_ms": 5.18,
+          "body_snippet": "{\"user_id\": \"admin\", \"role\": \"admin\", \"allowed_lines\": [\"*\"], \"can_write\": true, \"can_delete\": true, \"available_lines\": [\"heat_treatment\", \"welding\"]}",
+          "error": null,
+          "degradation": "normal"
+        },
+        "cases": {
+          "description": "案例查询（读 SQLite + Chroma）",
+          "status_codes": [
+            -1
+          ],
+          "avg_latency_ms": 3.27,
+          "body_snippet": "",
+          "error": "database is locked（故障注入）",
+          "degradation": "failed"
+        },
+        "dashboard": {
+          "description": "跨产线看板（读 SQLite + Chroma 全量扫描）",
+          "status_codes": [
+            -1
+          ],
+          "avg_latency_ms": 5.22,
+          "body_snippet": "",
+          "error": "database is locked（故障注入）",
+          "degradation": "failed"
+        },
+        "feedback": {
+          "description": "反馈写入（写 SQLite）",
+          "status_codes": [
+            500
+          ],
+          "avg_latency_ms": 3.32,
+          "body_snippet": "{\"detail\": \"反馈持久化失败\"}",
+          "error": null,
+          "degradation": "failed"
+        },
+        "analyze": {
+          "description": "归因分析（调 LLM + 全链路）",
+          "status_codes": [],
+          "avg_latency_ms": 0,
+          "body_snippet": "",
+          "error": null,
+          "degradation": "skipped"
+        }
+      }
+    },
+    "combined_failure": {
+      "description": "LLM + Chroma 同时故障",
+      "faults": [
+        "llm",
+        "chroma"
+      ],
+      "endpoints": {
+        "auth": {
+          "description": "权限查询（轻量，对照）",
+          "status_codes": [
+            200
+          ],
+          "avg_latency_ms": 2.93,
+          "body_snippet": "{\"user_id\": \"admin\", \"role\": \"admin\", \"allowed_lines\": [\"*\"], \"can_write\": true, \"can_delete\": true, \"available_lines\": [\"heat_treatment\", \"welding\"]}",
+          "error": null,
+          "degradation": "normal"
+        },
+        "cases": {
+          "description": "案例查询（读 SQLite + Chroma）",
+          "status_codes": [
+            200
+          ],
+          "avg_latency_ms": 3.79,
+          "body_snippet": "{\"total\": 313, \"cases\": [{\"record_id\": \"ep_1783012106_95b643\", \"batch_id\": \"B20250101-001\", \"defect_type\": \"hardness_low\", \"root_cause\": \"保温时间不足\", \"solution\": \"holding_time +45 分钟\", \"created_at\": \"2026-07-03 01:08:26.455529\", \"quality_score\": 0.9, \"line_id\": \"heat_treatment\"}, {\"record_id\": \"ep_1783",
+          "error": null,
+          "degradation": "degraded_ok"
+        },
+        "dashboard": {
+          "description": "跨产线看板（读 SQLite + Chroma 全量扫描）",
+          "status_codes": [
+            200
+          ],
+          "avg_latency_ms": 9077.4,
+          "body_snippet": "{\"user_id\": \"admin\", \"days\": 30, \"lines\": [{\"line_id\": \"heat_treatment\", \"episodic_count\": 313, \"feedback_count\": 4, \"conflict_count\": 21, \"semantic_count\": 0, \"defect_distribution\": {\"hardness_low\": 313}, \"action_distribution\": {\"adopted\": 4}, \"adoption_rate\": 1.0, \"avg_confidence\": 0.0, \"name\": \"热",
+          "error": null,
+          "degradation": "degraded_ok"
+        },
+        "feedback": {
+          "description": "反馈写入（写 SQLite）",
+          "status_codes": [
+            200
+          ],
+          "avg_latency_ms": 4613.74,
+          "body_snippet": "{\"success\": true, \"feedback_id\": \"fb_b94a7f70\"}",
+          "error": null,
+          "degradation": "normal"
+        },
+        "analyze": {
+          "description": "归因分析（调 LLM + 全链路）",
+          "status_codes": [
+            200
+          ],
+          "avg_latency_ms": 4591.31,
+          "body_snippet": "{\"trace_id\": \"trace_1deb9a8e0bff\", \"status\": \"completed\", \"message\": \"归因完成\", \"final_answer\": \"## 归因结果与参数调整建议\\n\\n### 方案 1：保温时间不足\\n**置信度**：高 (75%)\\n\\n**参数调整**：\\n  - holding_time: +45 分钟\\n\\n**预期效果**：保温时间从 90 提升至 135 分钟\\n**风险提示**：\\n  - 可能增加能耗\\n  - 需确认设备产能\\n**证据链**：\\n  - 当前保温时间 90 分钟 < 标准 120 分钟\\n\\n### 方",
+          "error": null,
+          "degradation": "degraded_ok"
+        }
+      }
+    }
+  },
+  "mes_note": "MES 当前为 mock 模式（无真实接入），不构成单点故障，未单独演练"
+}
