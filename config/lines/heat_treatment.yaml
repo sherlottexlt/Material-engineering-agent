@@ -1,0 +1,48 @@
+# 产线配置：热处理（45 钢调质）
+# M4-9: 把原硬编码在 prompts.yaml/coordinator/decision_agent 中的标准参数提取至此
+
+line_id: heat_treatment
+name: 热处理产线
+process_type: heat_treatment
+material: "45 钢"
+process_name: 调质处理
+
+# ===== 标准工艺参数（原硬编码 840/120/5.0）=====
+standard_params:
+  temperature: 840          # 淬火温度 (℃)
+  holding_time: 120         # 保温时间 (分钟)
+  cooling_rate: 5.0         # 冷却速率 (℃/s)
+  standard_hardness: 58.0   # 标准硬度 (HRc)
+
+# ===== 工艺约束（原 settings.yaml process_constraints.heat_treatment）=====
+constraints:
+  temperature_min: 800
+  temperature_max: 1100
+  holding_time_min: 30
+  holding_time_max: 480
+  cooling_rate_min: 0.5
+  cooling_rate_max: 50
+
+# ===== 该产线适用的缺陷类型 =====
+defect_types:
+  - hardness_low
+  - hardness_high
+  - deformation
+  - crack
+  - microstructure
+
+# ===== 可用的机理模型 =====
+metallurgy_models:
+  - jmak
+  - hall_petch
+  - cooling_rate
+
+# ===== 手册目录（按产线隔离）=====
+handbook_dir: data/handbooks/heat_treatment
+
+# ===== 检索关键词模板（知识 Agent 用）=====
+search_keywords:
+  - 硬度偏低
+  - 保温时间
+  - 冷却速率
+  - 调质处理

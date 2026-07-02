@@ -64,6 +64,7 @@ class AnalyzeRequest(BaseModel):
     defect_type: Optional[str] = None
     measured_value: Optional[float] = None
     standard_value: Optional[float] = None
+    line_id: str = "heat_treatment"  # M4-9: 产线ID，默认热处理
 
 
 class AnalyzeResponse(BaseModel):
@@ -82,6 +83,7 @@ class FeedbackRequest(BaseModel):
     action: str  # adopted / rejected / partial
     score: float  # 0-1
     comment: Optional[str] = None
+    line_id: str = "heat_treatment"  # M4-9: 产线ID
 
 
 # ===== 端点 =====
@@ -99,7 +101,7 @@ async def analyze(req: AnalyzeRequest):
     流程：planner → data → mechanism → knowledge → decision → review → interaction → memory_writer
     """
     trace_id = f"trace_{uuid.uuid4().hex[:12]}"
-    logger.info(f"归因请求: trace_id={trace_id}, batch={req.batch_id}, query={req.query}")
+    logger.info(f"归因请求: trace_id={trace_id}, batch={req.batch_id}, query={req.query}, line={req.line_id}")
 
     # 构造初始状态
     initial_state: AgentState = {
@@ -121,6 +123,7 @@ async def analyze(req: AnalyzeRequest):
         "max_replan": 3,
         "trace_id": trace_id,
         "session_id": trace_id,
+        "line_id": req.line_id,  # M4-9: 产线ID，贯穿全链路
     }
 
     try:
@@ -189,6 +192,7 @@ async def submit_feedback(req: FeedbackRequest):
         action=req.action,
         score=req.score,
         comment=req.comment,
+        line_id=req.line_id,  # M4-9: 产线隔离
     )
 
     if not saved:
@@ -198,19 +202,21 @@ async def submit_feedback(req: FeedbackRequest):
     if req.action == "adopted":
         memory.update_confidence(req.proposal_id, req.score)
 
-    logger.info(f"反馈已保存: {feedback_id}, action={req.action}, score={req.score}")
+    logger.info(f"反馈已保存: {feedback_id}, action={req.action}, score={req.score}, line={req.line_id}")
     return {"success": True, "feedback_id": feedback_id}
 
 
 @app.get("/api/v1/cases")
 async def list_cases(
     defect_type: Optional[str] = None,
+    line_id: Optional[str] = None,
     limit: int = 20,
 ):
-    """查询案例库"""
+    """查询案例库（M4-9: 支持按产线过滤）"""
     records = memory.query_episodic(
         defect_type=defect_type,
         days=365,
+        line_id=line_id,
     )
     return {
         "total": len(records),
@@ -227,9 +233,16 @@ async def memory_stats():
 
 
 @app.get("/api/v1/memory/episodic")
-async def list_episodic(limit: int = 100):
-    """列出全部短期记忆（SQLite episodic 表）"""
-    records = memory.list_all_episodic(limit=limit)
+async def list_episodic(
+    limit: int = 100,
+    line_id: Optional[str] = None,
+):
+    """列出全部短期记忆（SQLite episodic 表，M4-9: 支持按产线过滤）"""
+    if line_id:
+        # M4-9: 按产线过滤走 query_episodic
+        records = memory.query_episodic(days=365, line_id=line_id)
+    else:
+        records = memory.list_all_episodic(limit=limit)
     return {"total": len(records), "records": records}
 
 
@@ -241,18 +254,27 @@ async def list_semantic(limit: int = 100):
 
 
 @app.get("/api/v1/memory/feedback")
-async def list_feedback(limit: int = 100):
-    """列出全部用户反馈"""
-    records = memory.list_all_feedback(limit=limit)
+async def list_feedback(
+    limit: int = 100,
+    line_id: Optional[str] = None,
+):
+    """列出全部用户反馈（M4-9: 支持按产线过滤）"""
+    if line_id:
+        records = memory.query_feedback(days=365, line_id=line_id)
+    else:
+        records = memory.list_all_feedback(limit=limit)
     return {"total": len(records), "records": records}
 
 
 # ===== M3-9 知识冲突检测端点 =====
 
 @app.get("/api/v1/memory/conflicts")
-async def list_conflicts(limit: int = 100):
-    """列出全部知识冲突记录（按时间倒序）"""
-    records = memory.list_conflicts(limit=limit)
+async def list_conflicts(
+    limit: int = 100,
+    line_id: Optional[str] = None,
+):
+    """列出全部知识冲突记录（按时间倒序，M4-9: 支持按产线过滤）"""
+    records = memory.list_conflicts(limit=limit, line_id=line_id)
     return {"total": len(records), "records": records}
 
 
@@ -271,6 +293,7 @@ class CaseCreateRequest(BaseModel):
     solution: str = ""
     confidence: float = 0.5
     tags: list[str] = []
+    line_id: str = "heat_treatment"  # M4-9: 产线ID
 
 
 class CaseUpdateRequest(BaseModel):
@@ -302,6 +325,7 @@ async def create_case(req: CaseCreateRequest):
             confidence=req.confidence,
             source="manual",
             tags=req.tags,
+            line_id=req.line_id,  # M4-9: 产线隔离
         )
     except (ValueError, TypeError) as e:
         raise HTTPException(status_code=400, detail=f"参数非法: {e}")

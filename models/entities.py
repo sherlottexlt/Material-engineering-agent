@@ -11,11 +11,16 @@ from pydantic import BaseModel, Field
 
 class DefectType(str, Enum):
     """缺陷类型"""
+    # 热处理常见缺陷
     HARDNESS_LOW = "hardness_low"          # 硬度偏低
     HARDNESS_HIGH = "hardness_high"        # 硬度偏高
     DEFORMATION = "deformation"            # 变形
     CRACK = "crack"                        # 裂纹
     MICROSTRUCTURE = "microstructure"      # 组织异常
+    # 焊接常见缺陷（M4-9 扩展）
+    POROSITY = "porosity"                  # 气孔
+    SLAG_INCLUSION = "slag_inclusion"      # 夹渣
+    INCOMPLETE_FUSION = "incomplete_fusion"  # 未熔合
     OTHER = "other"
 
 
@@ -31,6 +36,7 @@ class BatchParams(BaseModel):
     """批次工艺参数"""
     batch_id: str = Field(description="批次编号")
     process_type: ProcessType = Field(description="工艺类型")
+    line_id: str = Field(default="heat_treatment", description="产线ID（M4-9 多产线支持）")
     temperature: Optional[float] = Field(default=None, description="温度 (℃)")
     holding_time: Optional[float] = Field(default=None, description="保温时间 (分钟)")
     cooling_rate: Optional[float] = Field(default=None, description="冷却速率 (℃/s)")
@@ -45,6 +51,7 @@ class DefectRecord(BaseModel):
     record_id: str = Field(description="缺陷记录ID")
     batch_id: str = Field(description="批次编号")
     defect_type: DefectType = Field(description="缺陷类型")
+    line_id: str = Field(default="heat_treatment", description="产线ID（M4-9 多产线支持）")
     severity: float = Field(ge=0, le=1, description="严重程度 0-1")
     measured_value: Optional[float] = Field(default=None, description="实测值")
     standard_value: Optional[float] = Field(default=None, description="标准值")
@@ -57,6 +64,7 @@ class CaseRecord(BaseModel):
     case_id: str = Field(description="案例ID")
     defect_type: DefectType = Field(description="缺陷类型")
     batch_params: BatchParams = Field(description="批次参数")
+    line_id: str = Field(default="heat_treatment", description="产线ID（M4-9 多产线支持）")
     root_cause: str = Field(description="根因分析")
     solution: str = Field(description="解决方案")
     effect: Optional[str] = Field(default=None, description="调整后效果")
@@ -70,6 +78,7 @@ class AdjustmentProposal(BaseModel):
     """参数调整建议"""
     proposal_id: str = Field(description="建议ID")
     batch_id: str = Field(description="批次编号")
+    line_id: str = Field(default="heat_treatment", description="产线ID（M4-9 多产线支持）")
     adjustments: dict[str, float] = Field(description="参数调整项 {参数名: 调整量}")
     expected_effect: str = Field(description="预期效果")
     risks: list[str] = Field(default_factory=list, description="风险提示")

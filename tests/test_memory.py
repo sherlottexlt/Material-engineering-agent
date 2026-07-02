@@ -48,13 +48,25 @@ class _FakeChromaCollection:
                 "metadata": dict(metadatas[i]) if i < len(metadatas) and metadatas[i] else {},
             }
 
-    def query(self, query_texts, n_results):
+    def query(self, query_texts, n_results, where=None):
+        """语义检索（可选 where 过滤，模拟 Chroma metadata where）
+
+        Args:
+            query_texts: 查询文本列表
+            n_results: 返回数量
+            where: metadata 过滤条件 dict，如 {"line_id": "welding"}
+        """
         results = {"documents": [[]], "metadatas": [[]], "distances": [[]], "ids": [[]]}
         if not self._store or not query_texts:
             return results
         query_text = query_texts[0] or ""
         scored = []
         for doc_id, item in self._store.items():
+            # M4-9: where 过滤（模拟 Chroma metadata where）
+            if where:
+                meta = item.get("metadata", {})
+                if not all(meta.get(k) == v for k, v in where.items()):
+                    continue
             doc = item["document"]
             q_tokens = [t for t in query_text.split() if t]
             overlap = sum(1 for t in q_tokens if t in doc)
@@ -1394,6 +1406,296 @@ class TestMemoryWriterIsolation:
         }
         result = asyncio.run(mw_func(state))
         assert result == {}, "异常时应静默返回空字典，不污染 state"
+
+
+# ===== M4-9: 多产线隔离测试 =====
+
+
+class TestMultiLineIsolation:
+    """M4-9: 多产线数据隔离测试
+
+    验证 line_id 贯穿 episodic / semantic / feedback / conflicts 四层记忆，
+    不同产线的数据互不干扰。
+    """
+
+    def test_episodic_isolation_by_line_id(self, memory):
+        """短期记忆应按 line_id 隔离：写入两条不同产线，按 line_id 查询只返回对应产线"""
+        memory.write_episodic("B001", "hardness_low", "原因A", "方案A", line_id="heat_treatment")
+        memory.write_episodic("B002", "porosity", "原因B", "方案B", line_id="welding")
+
+        # 按 heat_treatment 查询，只返回 1 条
+        ht_results = memory.query_episodic(line_id="heat_treatment", days=365)
+        assert len(ht_results) == 1
+        assert ht_results[0]["line_id"] == "heat_treatment"
+        assert ht_results[0]["batch_id"] == "B001"
+
+        # 按 welding 查询，只返回 1 条
+        wd_results = memory.query_episodic(line_id="welding", days=365)
+        assert len(wd_results) == 1
+        assert wd_results[0]["line_id"] == "welding"
+        assert wd_results[0]["batch_id"] == "B002"
+
+        # 不传 line_id 查询全部
+        all_results = memory.query_episodic(days=365)
+        assert len(all_results) == 2
+
+    def test_episodic_default_line_id(self, memory):
+        """write_episodic 不传 line_id 时默认 heat_treatment"""
+        memory.write_episodic("B001", "hardness_low", "原因A", "方案A")
+        results = memory.query_episodic(line_id="heat_treatment", days=365)
+        assert len(results) == 1
+        assert results[0]["line_id"] == "heat_treatment"
+
+    def test_feedback_isolation_by_line_id(self, memory):
+        """用户反馈应按 line_id 隔离"""
+        memory.write_feedback("fb1", "P001", "u1", "adopted", 0.9, line_id="heat_treatment")
+        memory.write_feedback("fb2", "P002", "u2", "rejected", 0.2, line_id="welding")
+
+        ht = memory.query_feedback(line_id="heat_treatment", days=365)
+        assert len(ht) == 1
+        assert ht[0]["feedback_id"] == "fb1"
+
+        wd = memory.query_feedback(line_id="welding", days=365)
+        assert len(wd) == 1
+        assert wd[0]["feedback_id"] == "fb2"
+
+        all_fb = memory.query_feedback(days=365)
+        assert len(all_fb) == 2
+
+    def test_semantic_isolation_by_line_id(self, memory_with_chroma):
+        """长期记忆（Chroma）应按 line_id 隔离检索"""
+        memory = memory_with_chroma
+        # 写入两个不同产线的案例，缺陷类型相同
+        case_ht = _make_case(
+            case_id="C_HT",
+            root_cause="保温时间不足",
+            line_id="heat_treatment",
+        )
+        case_wd = _make_case(
+            case_id="C_WD",
+            root_cause="保温时间不足",
+            line_id="welding",
+        )
+        memory.write_semantic(case_ht)
+        memory.write_semantic(case_wd)
+
+        # 按 heat_treatment 检索，只命中 C_HT
+        ht_hits = memory.search_semantic("保温时间不足", top_k=10, line_id="heat_treatment")
+        ht_ids = [h["id"] for h in ht_hits]
+        assert "C_HT" in ht_ids
+        assert "C_WD" not in ht_ids, "welding 案例不应出现在 heat_treatment 检索结果中"
+
+        # 按 welding 检索，只命中 C_WD
+        wd_hits = memory.search_semantic("保温时间不足", top_k=10, line_id="welding")
+        wd_ids = [h["id"] for h in wd_hits]
+        assert "C_WD" in wd_ids
+        assert "C_HT" not in wd_ids
+
+        # 不传 line_id 检索全部
+        all_hits = memory.search_semantic("保温时间不足", top_k=10)
+        all_ids = [h["id"] for h in all_hits]
+        assert "C_HT" in all_ids
+        assert "C_WD" in all_ids
+
+    def test_semantic_metadata_contains_line_id(self, memory_with_chroma):
+        """write_semantic 写入的 Chroma metadata 应包含 line_id 字段"""
+        memory = memory_with_chroma
+        case = _make_case(case_id="C_META", line_id="welding")
+        memory.write_semantic(case)
+
+        results = memory.search_semantic("保温时间不足", top_k=5, line_id="welding")
+        assert len(results) > 0
+        assert results[0]["metadata"]["line_id"] == "welding"
+
+    def test_detect_conflicts_isolation_by_line_id(self, memory_with_chroma):
+        """冲突检测应按 line_id 隔离：不同产线的相似案例不互相冲突"""
+        memory = memory_with_chroma
+        # 先写入 heat_treatment 案例
+        case_ht = _make_case(
+            case_id="C_HT_EXIST",
+            root_cause="保温时间不足",
+            solution="holding_time +15",
+            confidence=0.8,
+            line_id="heat_treatment",
+        )
+        memory.write_semantic(case_ht)
+
+        # 再写入 welding 案例，根因相同但应不与 heat_treatment 冲突
+        case_wd = _make_case(
+            case_id="C_WD_NEW",
+            root_cause="保温时间不足",
+            solution="holding_time +30",  # 不同方案，理论上会触发软冲突
+            confidence=0.8,
+            line_id="welding",
+        )
+        # detect_conflicts 内部会按 case.line_id 过滤检索
+        conflicts = memory.detect_conflicts(case_wd)
+        # 因为 welding 产线没有其他案例，所以不应检测到冲突
+        assert len(conflicts) == 0, "不同产线案例不应触发冲突"
+
+    def test_detect_conflicts_same_line_triggers_conflict(self, memory_with_chroma):
+        """同产线内相似案例应触发冲突（验证隔离逻辑没误伤同产线检测）"""
+        memory = memory_with_chroma
+        case1 = _make_case(
+            case_id="C_HT_1",
+            root_cause="保温时间不足",
+            solution="holding_time +15",
+            confidence=0.8,
+            line_id="heat_treatment",
+        )
+        memory.write_semantic(case1)
+
+        # 同产线、相似参数、不同方案 → 应触发软冲突
+        case2 = _make_case(
+            case_id="C_HT_2",
+            root_cause="保温时间不足",
+            solution="holding_time +30",
+            confidence=0.8,
+            line_id="heat_treatment",
+        )
+        conflicts = memory.detect_conflicts(case2)
+        assert len(conflicts) > 0, "同产线相似案例应触发冲突"
+        # 验证冲突记录的 line_id 字段
+        for c in conflicts:
+            assert c.line_id == "heat_treatment"
+
+    def test_save_and_list_conflicts_isolation(self, memory):
+        """冲突记录的保存与查询应按 line_id 隔离"""
+        from agent.memory.memory_service import ConflictRecord
+
+        now = datetime.now()
+        cf_ht = ConflictRecord(
+            conflict_id="cf_ht_1",
+            new_case_id="C_HT_NEW",
+            existing_case_id="C_HT_OLD",
+            conflict_type="soft",
+            description="热处理产线冲突",
+            created_at=now,
+            line_id="heat_treatment",
+        )
+        cf_wd = ConflictRecord(
+            conflict_id="cf_wd_1",
+            new_case_id="C_WD_NEW",
+            existing_case_id="C_WD_OLD",
+            conflict_type="hard",
+            description="焊接产线冲突",
+            created_at=now,
+            line_id="welding",
+        )
+        memory.save_conflict(cf_ht)
+        memory.save_conflict(cf_wd)
+
+        ht = memory.list_conflicts(line_id="heat_treatment")
+        assert len(ht) == 1
+        assert ht[0]["conflict_id"] == "cf_ht_1"
+        assert ht[0]["line_id"] == "heat_treatment"
+
+        wd = memory.list_conflicts(line_id="welding")
+        assert len(wd) == 1
+        assert wd[0]["conflict_id"] == "cf_wd_1"
+
+        all_cf = memory.list_conflicts()
+        assert len(all_cf) == 2
+
+    def test_search_cases_tool_isolation(self, memory_with_chroma):
+        """search_cases 工具函数应按 line_id 隔离"""
+        _set_memory_service(memory_with_chroma)
+        memory = memory_with_chroma
+
+        case_ht = _make_case(
+            case_id="C_TOOL_HT",
+            root_cause="保温时间不足",
+            line_id="heat_treatment",
+        )
+        case_wd = _make_case(
+            case_id="C_TOOL_WD",
+            root_cause="保温时间不足",
+            line_id="welding",
+        )
+        memory.write_semantic(case_ht)
+        memory.write_semantic(case_wd)
+
+        # 按 welding 检索
+        result_wd = search_cases("保温时间不足", top_k=10, line_id="welding")
+        ids_wd = [r["record_id"] for r in result_wd.get("results", [])]
+        assert "C_TOOL_WD" in ids_wd
+        assert "C_TOOL_HT" not in ids_wd
+
+        # 按 heat_treatment 检索
+        result_ht = search_cases("保温时间不足", top_k=10, line_id="heat_treatment")
+        ids_ht = [r["record_id"] for r in result_ht.get("results", [])]
+        assert "C_TOOL_HT" in ids_ht
+        assert "C_TOOL_WD" not in ids_ht
+
+    def test_memory_writer_passes_line_id(self, monkeypatch):
+        """memory_writer 应从 state 读取 line_id 并传给 write_episodic / CaseRecord"""
+        from agent.nodes import memory_writer as mw_func
+
+        class _LineCaptureMemory:
+            """捕获 write_episodic 和 write_semantic 调用参数的 fake"""
+            def __init__(self):
+                self.episodic_kwargs = None
+                self.semantic_case = None
+
+            def write_episodic(self, **kwargs):
+                self.episodic_kwargs = kwargs
+
+            def write_semantic(self, case):
+                self.semantic_case = case
+                return True
+
+        fake = _LineCaptureMemory()
+        monkeypatch.setitem(mw_func.__globals__, "_memory_service", fake)
+
+        state = {
+            "trace_id": "tr_line",
+            "batch_id": "B_LINE",
+            "line_id": "welding",  # M4-9: 产线ID
+            "decision_result": {"proposals": [{"root_cause": "保温时间不足", "adjustments": {"holding_time": "+15"}}]},
+            "data_result": {"batch_params": {"holding_time": 90}},
+            "final_answer": None,
+        }
+        asyncio.run(mw_func(state))
+
+        # 验证 write_episodic 收到了 line_id
+        assert fake.episodic_kwargs is not None
+        assert fake.episodic_kwargs.get("line_id") == "welding"
+
+        # 验证 CaseRecord 的 line_id 字段
+        assert fake.semantic_case is not None
+        assert fake.semantic_case.line_id == "welding"
+
+    def test_memory_writer_default_line_id(self, monkeypatch):
+        """memory_writer 在 state 无 line_id 时应回退到默认值 heat_treatment"""
+        from agent.nodes import memory_writer as mw_func
+
+        class _LineCaptureMemory:
+            def __init__(self):
+                self.episodic_kwargs = None
+                self.semantic_case = None
+
+            def write_episodic(self, **kwargs):
+                self.episodic_kwargs = kwargs
+
+            def write_semantic(self, case):
+                self.semantic_case = case
+                return True
+
+        fake = _LineCaptureMemory()
+        monkeypatch.setitem(mw_func.__globals__, "_memory_service", fake)
+
+        state = {
+            "trace_id": "tr_default",
+            "batch_id": "B_DEFAULT",
+            # 不传 line_id，应回退到默认值
+            "decision_result": {"proposals": [{"root_cause": "保温时间不足", "adjustments": {"holding_time": "+15"}}]},
+            "data_result": {"batch_params": {"holding_time": 90}},
+            "final_answer": None,
+        }
+        asyncio.run(mw_func(state))
+
+        assert fake.episodic_kwargs.get("line_id") == "heat_treatment"
+        assert fake.semantic_case.line_id == "heat_treatment"
 
 
 if __name__ == "__main__":

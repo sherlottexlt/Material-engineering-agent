@@ -458,22 +458,23 @@ def _set_memory_service(service: MemoryService | None) -> None:
     _memory_service = service
 
 
-def search_cases(query: str, top_k: int = 3) -> dict:
+def search_cases(query: str, top_k: int = 3, line_id: Optional[str] = None) -> dict:
     """检索历史案例（优先走长期记忆语义检索，降级到 mock 关键词匹配）
 
     Args:
         query: 检索关键词 / 自然语言描述
         top_k: 返回条数
+        line_id: 产线ID过滤（可选，M4-9 多产线隔离；None 则不过滤）
 
     Returns:
         匹配的历史案例，_source 标识来源：semantic_memory / mock_data
     """
-    logger.info(f"[Tool] search_cases: {query}")
+    logger.info(f"[Tool] search_cases: {query}, line_id={line_id}")
 
     # 1. 优先走长期记忆（Chroma 语义检索）
     try:
         memory = _get_memory_service()
-        results = memory.search_semantic(query, top_k=top_k)
+        results = memory.search_semantic(query, top_k=top_k, line_id=line_id)
         if results:
             formatted = []
             for r in results:

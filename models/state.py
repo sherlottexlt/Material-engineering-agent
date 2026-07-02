@@ -40,6 +40,7 @@ class AgentState(TypedDict):
     user_query: str
     batch_id: Optional[str]
     defect_record: Optional[DefectRecord]
+    line_id: str  # M4-9: 产线ID，默认 "heat_treatment"
 
     # ===== 任务规划 =====
     plan: list[SubTask]

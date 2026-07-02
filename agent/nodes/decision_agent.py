@@ -12,7 +12,7 @@ import json
 
 from loguru import logger
 
-from agent.utils import extract_json, get_llm, get_prompt, get_process_constraints
+from agent.utils import extract_json, get_llm, get_prompt, get_process_constraints, get_line_standard_params, get_line_constraints
 from models.state import AgentState
 
 
@@ -95,53 +95,60 @@ def _summarize_for_decision(data_result: dict, mechanism_result: dict, knowledge
     return data_summary, mechanism_summary, knowledge_summary
 
 
-def _rule_based_proposals(data_result: dict, mechanism_result: dict) -> dict:
+def _rule_based_proposals(data_result: dict, mechanism_result: dict, line_id: str = "heat_treatment") -> dict:
     """规则降级方案：LLM 不可用时基于规则生成
 
-    根据工艺参数与机理模型输出，用简单规则生成候选方案
+    根据工艺参数与机理模型输出，用简单规则生成候选方案。
+    M4-9: 标准阈值从产线配置读取。
     """
     batch_params = data_result.get("batch_params") or {}
     jmak = mechanism_result.get("jmak_output", {}).get("outputs", {})
     cooling = mechanism_result.get("cooling_output", {}).get("outputs", {})
 
+    # M4-9: 从产线配置读取标准参数
+    std_params = get_line_standard_params(line_id)
+    std_temp = std_params.get("temperature", 840)
+    std_holding = std_params.get("holding_time", 120)
+    std_cooling = std_params.get("cooling_rate", 5.0)
+
     proposals = []
-    temperature = batch_params.get("temperature", 850)
-    holding_time = batch_params.get("holding_time", 120)
-    cooling_rate = batch_params.get("cooling_rate", 5.0)
+    temperature = batch_params.get("temperature", std_temp)
+    holding_time = batch_params.get("holding_time", std_holding)
+    cooling_rate = batch_params.get("cooling_rate", std_cooling)
 
     # 方案1：保温时间不足
-    if holding_time < 120:
+    if holding_time < std_holding:
         proposals.append({
             "proposal_id": "P001",
             "root_cause": "保温时间不足",
-            "adjustments": {"holding_time": f"+{120 - holding_time + 15} 分钟"},
-            "expected_effect": f"保温时间从 {holding_time} 提升至 {holding_time + 120 - holding_time + 15} 分钟",
+            "adjustments": {"holding_time": f"+{std_holding - holding_time + 15} 分钟"},
+            "expected_effect": f"保温时间从 {holding_time} 提升至 {holding_time + std_holding - holding_time + 15} 分钟",
             "risks": ["可能增加能耗", "需确认设备产能"],
-            "evidence": [f"当前保温时间 {holding_time} 分钟 < 标准 120 分钟"],
+            "evidence": [f"当前保温时间 {holding_time} 分钟 < 标准 {std_holding} 分钟"],
             "confidence": 0.75,
         })
 
     # 方案2：冷却速率过低
-    if cooling_rate < 5.0:
+    if cooling_rate < std_cooling:
         proposals.append({
             "proposal_id": "P002",
             "root_cause": "冷却速率过低",
-            "adjustments": {"cooling_rate": f"提升至 {cooling_rate + 5.0} ℃/s"},
-            "expected_effect": f"冷却速率从 {cooling_rate} 提升至 {cooling_rate + 5.0} ℃/s",
+            "adjustments": {"cooling_rate": f"提升至 {cooling_rate + std_cooling} ℃/s"},
+            "expected_effect": f"冷却速率从 {cooling_rate} 提升至 {cooling_rate + std_cooling} ℃/s",
             "risks": ["可能导致变形风险增加"],
-            "evidence": [f"当前冷却速率 {cooling_rate} ℃/s < 标准 5.0 ℃/s"],
+            "evidence": [f"当前冷却速率 {cooling_rate} ℃/s < 标准 {std_cooling} ℃/s"],
             "confidence": 0.70,
         })
 
     # 方案3：温度偏低
-    if temperature < 840:
+    if temperature < std_temp:
         proposals.append({
             "proposal_id": "P003",
             "root_cause": "淬火温度偏低",
-            "adjustments": {"temperature": f"+{840 - temperature + 10} ℃"},
-            "expected_effect": f"温度从 {temperature} 提升至 {temperature + 840 - temperature + 10} ℃",
+            "adjustments": {"temperature": f"+{std_temp - temperature + 10} ℃"},
+            "expected_effect": f"温度从 {temperature} 提升至 {temperature + std_temp - temperature + 10} ℃",
             "risks": ["需确认设备上限", "可能影响晶粒度"],
-            "evidence": [f"当前温度 {temperature}℃ < 标准 840℃"],
+            "evidence": [f"当前温度 {temperature}℃ < 标准 {std_temp}℃"],
             "confidence": 0.65,
         })
 
@@ -178,7 +185,9 @@ async def decision_agent(state: AgentState) -> dict:
     review_result = state.get("review_result") or {}
     arbitration_result = state.get("arbitration_result") or {}
     retry_count = state.get("retry_count", 0)
-    constraints = get_process_constraints("heat_treatment")
+    # M4-9: 从产线配置读取约束（替代硬编码 "heat_treatment"）
+    line_id = state.get("line_id", "heat_treatment")
+    constraints = get_line_constraints(line_id)
 
     logger.info(f"[DecisionAgent] 开始决策综合 (第 {retry_count + 1} 次)")
 
@@ -241,10 +250,10 @@ async def decision_agent(state: AgentState) -> dict:
                     "[DecisionAgent] LLM 输出非 JSON，降级为规则方案。原始输出前 300 字符: "
                     f"{content[:300]!r}"
                 )
-                decision_result = _rule_based_proposals(data_result, mechanism_result)
+                decision_result = _rule_based_proposals(data_result, mechanism_result, line_id)
         except Exception as parse_err:
             logger.warning(f"[DecisionAgent] JSON 解析异常，降级为规则方案: {parse_err}")
-            decision_result = _rule_based_proposals(data_result, mechanism_result)
+            decision_result = _rule_based_proposals(data_result, mechanism_result, line_id)
 
         logger.info(
             f"[DecisionAgent] 决策完成, 方案数={len(decision_result.get('proposals', []))}, "
@@ -252,7 +261,7 @@ async def decision_agent(state: AgentState) -> dict:
         )
     except Exception as e:
         logger.error(f"[DecisionAgent] LLM 决策失败，降级为规则方案: {e}")
-        decision_result = _rule_based_proposals(data_result, mechanism_result)
+        decision_result = _rule_based_proposals(data_result, mechanism_result, line_id)
         logger.info(
             f"[DecisionAgent] 规则方案生成, 方案数={len(decision_result.get('proposals', []))}"
         )

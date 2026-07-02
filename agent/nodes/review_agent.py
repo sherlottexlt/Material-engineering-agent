@@ -10,7 +10,7 @@ import json
 
 from loguru import logger
 
-from agent.utils import extract_json, get_llm, get_prompt, get_process_constraints
+from agent.utils import extract_json, get_llm, get_prompt, get_process_constraints, get_line_constraints
 from models.state import AgentState
 
 
@@ -27,7 +27,9 @@ async def review_agent(state: AgentState) -> dict:
         review_result（含 retry_count 更新）
     """
     proposal = state.get("decision_result") or {}
-    constraints = get_process_constraints("heat_treatment")
+    # M4-9: 从产线配置读取约束（替代硬编码 "heat_treatment"）
+    line_id = state.get("line_id", "heat_treatment")
+    constraints = get_line_constraints(line_id)
     retry_count = state.get("retry_count", 0)
 
     logger.info(f"[ReviewAgent] 开始审核 (第 {retry_count + 1} 次)")

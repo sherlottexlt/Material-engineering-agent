@@ -18,6 +18,7 @@ async def knowledge_agent(state: AgentState) -> dict:
     """知识检索 Agent
 
     调用工具检索手册与案例，输出带来源引用的知识片段。
+    M4-9: 按 line_id 隔离案例检索（手册为全产线共享，不隔离）。
 
     Args:
         state: LangGraph 全局状态
@@ -26,14 +27,16 @@ async def knowledge_agent(state: AgentState) -> dict:
         knowledge_result 与 observations
     """
     query = state.get("user_query", "")
+    # M4-9: 从 state 读取产线ID，用于案例检索隔离
+    line_id = state.get("line_id", "heat_treatment")
     # 从缺陷记录中提取关键词
     search_query = "硬度偏低 保温时间 冷却速率"
 
-    logger.info(f"[KnowledgeAgent] 开始知识检索, query={search_query}")
+    logger.info(f"[KnowledgeAgent] 开始知识检索, query={search_query}, line_id={line_id}")
 
     observations = []
 
-    # 1. 检索工艺手册
+    # 1. 检索工艺手册（手册全产线共享，不按 line_id 过滤）
     handbook_hits = search_handbook(search_query, top_k=3)
     observations.append({
         "step_id": 0,
@@ -43,8 +46,8 @@ async def knowledge_agent(state: AgentState) -> dict:
         "timestamp": datetime.now().isoformat(),
     })
 
-    # 2. 检索历史案例
-    case_hits = search_cases(search_query, top_k=3)
+    # 2. 检索历史案例（M4-9: 按 line_id 隔离）
+    case_hits = search_cases(search_query, top_k=3, line_id=line_id)
     observations.append({
         "step_id": 0,
         "agent": "knowledge",

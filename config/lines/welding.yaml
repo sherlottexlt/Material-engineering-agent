@@ -1,0 +1,54 @@
+# 产线配置：焊接（示例产线 B）
+# M4-9: 演示多产线配置差异，参数为示例值
+
+line_id: welding
+name: 焊接产线
+process_type: welding
+material: "Q345B 低合金钢"
+process_name: 熔化极气体保护焊 (GMAW)
+
+# ===== 标准工艺参数 =====
+standard_params:
+  welding_current: 220       # 焊接电流 (A)
+  welding_speed: 6.0         # 焊接速度 (mm/s)
+  arc_voltage: 24            # 电弧电压 (V)
+  wire_feed_rate: 8.0        # 送丝速度 (m/min)
+  gas_flow_rate: 15          # 保护气流量 (L/min)
+  heat_input: 12.0           # 热输入 (kJ/mm)
+
+# ===== 工艺约束 =====
+constraints:
+  welding_current_min: 100
+  welding_current_max: 350
+  welding_speed_min: 2.0
+  welding_speed_max: 15.0
+  arc_voltage_min: 18
+  arc_voltage_max: 32
+  heat_input_min: 5.0
+  heat_input_max: 25.0
+
+# ===== 该产线适用的缺陷类型 =====
+defect_types:
+  - crack              # 焊接裂纹（热裂纹/冷裂纹）
+  - deformation        # 焊接变形
+  - microstructure     # 组织异常（热影响区）
+  - porosity           # 气孔
+  - slag_inclusion     # 夹渣
+  - incomplete_fusion  # 未熔合
+
+# ===== 可用的机理模型 =====
+metallurgy_models:
+  - weld_thermal       # 焊接热过程模型
+  - weld_heat_affected # 热影响区组织模型
+  - residual_stress    # 残余应力模型
+
+# ===== 手册目录（按产线隔离）=====
+handbook_dir: data/handbooks/welding
+
+# ===== 检索关键词模板（知识 Agent 用）=====
+search_keywords:
+  - 焊接裂纹
+  - 热影响区
+  - 焊接变形
+  - 气孔
+  - 热输入

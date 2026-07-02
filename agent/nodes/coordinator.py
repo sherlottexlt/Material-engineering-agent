@@ -22,6 +22,7 @@ from agent.nodes import (
     planner,
     review_agent,
 )
+from agent.utils import get_line_standard_params
 from models.state import AgentState
 
 
@@ -41,6 +42,14 @@ async def arbitrate(state: AgentState) -> dict:
     mechanism_result = state.get("mechanism_result") or {}
     knowledge_result = state.get("knowledge_result") or {}
 
+    # M4-9: 从产线配置读取标准参数（替代硬编码 840/120/5.0/58.0）
+    line_id = state.get("line_id", "heat_treatment")
+    std_params = get_line_standard_params(line_id)
+    std_temp = std_params.get("temperature", 840)
+    std_holding = std_params.get("holding_time", 120)
+    std_cooling = std_params.get("cooling_rate", 5.0)
+    std_hardness = std_params.get("standard_hardness", 58.0)
+
     conflicts: list[dict] = []
 
     # 检查 1: batch_params 一致性（并行模式下 mechanism 自行查询，可能与 data 不同步）
@@ -49,9 +58,9 @@ async def arbitrate(state: AgentState) -> dict:
     # 注意：mechanism_result 目前不存 batch_params，跳过此检查
 
     # 检查 2: 机理预测与缺陷描述一致性
-    # 注意：JMAK 模型对 holding_time 不敏感（指数衰减快收敛），holding_time < 120 时
-    # 即使保温时间不足，JMAK 仍可能预测硬度 ≥ 58.0，这是模型局限而非真正冲突。
-    # 仅在 holding_time ≥ 120（保温时间正常）但预测硬度 < 58.0 时才标记冲突（反向逻辑）。
+    # 注意：JMAK 模型对 holding_time 不敏感（指数衰减快收敛），holding_time < std 时
+    # 即使保温时间不足，JMAK 仍可能预测硬度 ≥ std_hardness，这是模型局限而非真正冲突。
+    # 仅在 holding_time ≥ std（保温时间正常）但预测硬度 < std_hardness 时才标记冲突（反向逻辑）。
     jmak_output = mechanism_result.get("jmak_output")
     jmak_outputs = jmak_output.get("outputs", {}) if isinstance(jmak_output, dict) else {}
     predicted_hardness = jmak_outputs.get("predicted_hardness_HRc") if isinstance(jmak_outputs, dict) else None
@@ -62,11 +71,11 @@ async def arbitrate(state: AgentState) -> dict:
     if (predicted_hardness is not None
             and isinstance(predicted_hardness, (int, float))
             and isinstance(holding_time, (int, float))
-            and holding_time >= 120
-            and predicted_hardness < 58.0):
+            and holding_time >= std_holding
+            and predicted_hardness < std_hardness):
         conflicts.append({
             "type": "mechanism_data_mismatch",
-            "detail": f"保温时间 {holding_time} 分钟正常，但 JMAK 预测硬度 {predicted_hardness} HRc < 标准 58.0，与缺陷报告不一致",
+            "detail": f"保温时间 {holding_time} 分钟正常，但 JMAK 预测硬度 {predicted_hardness} HRc < 标准 {std_hardness}，与缺陷报告不一致",
             "severity": "high",
         })
 
@@ -81,46 +90,46 @@ async def arbitrate(state: AgentState) -> dict:
         })
 
     # 检查 4: 参数偏离分析（M2 修复：帮助 decision 避免过度诊断）
-    # 基于标准阈值（temp<840/holding<120/cooling<5.0）计算每个参数的偏离情况
-    # 供 decision 的 LLM 参考，避免边界值（如 temp=842）被误判为"温度偏低"
+    # M4-9: 标准阈值从产线配置读取
+    # 供 decision 的 LLM 参考，避免边界值（如 temp=std_temp+2）被误判为"温度偏低"
     temperature = data_params.get("temperature")
     cooling_rate = data_params.get("cooling_rate")
     param_status = {}
     if isinstance(temperature, (int, float)):
-        temp_dev = (840 - temperature) / 840 * 100 if temperature < 840 else 0
+        temp_dev = (std_temp - temperature) / std_temp * 100 if temperature < std_temp else 0
         param_status["temperature"] = {
             "value": temperature,
-            "standard": 840,
+            "standard": std_temp,
             "deviation_pct": round(temp_dev, 2),
-            "is_low": temperature < 840,
-            "note": "温度偏低" if temperature < 840 else (
-                "边界值，属正常波动，不得列为温度偏低" if 840 <= temperature < 845 else "正常"
+            "is_low": temperature < std_temp,
+            "note": "温度偏低" if temperature < std_temp else (
+                "边界值，属正常波动，不得列为温度偏低" if std_temp <= temperature < std_temp + 5 else "正常"
             ),
         }
     if isinstance(holding_time, (int, float)):
-        hold_dev = (120 - holding_time) / 120 * 100 if holding_time < 120 else 0
+        hold_dev = (std_holding - holding_time) / std_holding * 100 if holding_time < std_holding else 0
         param_status["holding_time"] = {
             "value": holding_time,
-            "standard": 120,
+            "standard": std_holding,
             "deviation_pct": round(hold_dev, 2),
-            "is_low": holding_time < 120,
-            "note": "保温时间不足" if holding_time < 120 else "正常",
+            "is_low": holding_time < std_holding,
+            "note": "保温时间不足" if holding_time < std_holding else "正常",
         }
     if isinstance(cooling_rate, (int, float)):
-        cool_dev = (5.0 - cooling_rate) / 5.0 * 100 if cooling_rate < 5.0 else 0
+        cool_dev = (std_cooling - cooling_rate) / std_cooling * 100 if cooling_rate < std_cooling else 0
         param_status["cooling_rate"] = {
             "value": cooling_rate,
-            "standard": 5.0,
+            "standard": std_cooling,
             "deviation_pct": round(cool_dev, 2),
-            "is_low": cooling_rate < 5.0,
-            "note": "冷却速率过低" if cooling_rate < 5.0 else "正常",
+            "is_low": cooling_rate < std_cooling,
+            "note": "冷却速率过低" if cooling_rate < std_cooling else "正常",
         }
 
-    # 边界值温度警告：840-845 之间属正常波动，但 LLM 容易误判
-    if isinstance(temperature, (int, float)) and 840 <= temperature < 845:
+    # 边界值温度警告：std_temp ~ std_temp+5 之间属正常波动，但 LLM 容易误判
+    if isinstance(temperature, (int, float)) and std_temp <= temperature < std_temp + 5:
         conflicts.append({
             "type": "borderline_temperature",
-            "detail": f"温度 {temperature}℃ 在边界区间（840-845），属正常波动，不得列为'温度偏低'",
+            "detail": f"温度 {temperature}℃ 在边界区间（{std_temp}-{std_temp + 5}），属正常波动，不得列为'温度偏低'",
             "severity": "medium",
         })
 

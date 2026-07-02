@@ -38,6 +38,7 @@ class ConflictRecord:
     """知识冲突记录（M3-9）
 
     当新案例与已有案例存在矛盾时生成，不阻止写入，仅告警。
+    M4-9: 增加 line_id 字段，支持多产线隔离。
     """
     conflict_id: str
     new_case_id: str
@@ -45,6 +46,7 @@ class ConflictRecord:
     conflict_type: str  # hard / soft / confidence
     description: str
     created_at: datetime
+    line_id: str = "heat_treatment"
 
 
 class MemoryService:
@@ -84,7 +86,10 @@ class MemoryService:
         self._ensure_chroma()
 
     def _init_db(self):
-        """初始化短期记忆表结构"""
+        """初始化短期记忆表结构
+
+        M4-9: 三张表均增加 line_id 列（默认 'heat_treatment'），支持多产线数据隔离。
+        """
         self.db.execute("""
             CREATE TABLE IF NOT EXISTS episodic (
                 record_id TEXT PRIMARY KEY,
@@ -93,7 +98,8 @@ class MemoryService:
                 root_cause TEXT,
                 solution TEXT,
                 created_at TIMESTAMP,
-                quality_score REAL DEFAULT 0.5
+                quality_score REAL DEFAULT 0.5,
+                line_id TEXT DEFAULT 'heat_treatment'
             )
         """)
         self.db.execute("""
@@ -104,7 +110,8 @@ class MemoryService:
                 action TEXT,
                 score REAL,
                 comment TEXT,
-                created_at TIMESTAMP
+                created_at TIMESTAMP,
+                line_id TEXT DEFAULT 'heat_treatment'
             )
         """)
         # M3-9: 知识冲突记录表
@@ -115,10 +122,24 @@ class MemoryService:
                 existing_case_id TEXT,
                 conflict_type TEXT,
                 description TEXT,
-                created_at TIMESTAMP
+                created_at TIMESTAMP,
+                line_id TEXT DEFAULT 'heat_treatment'
             )
         """)
+        # M4-9: 旧表迁移（已有表无 line_id 列时 ALTER TABLE 补列）
+        self._migrate_add_line_id()
         self.db.commit()
+
+    def _migrate_add_line_id(self):
+        """M4-9: 为旧版表补充 line_id 列（向后兼容）"""
+        for table in ("episodic", "feedback", "conflicts"):
+            cur = self.db.execute(f"PRAGMA table_info({table})")
+            columns = [row[1] for row in cur.fetchall()]
+            if "line_id" not in columns:
+                self.db.execute(
+                    f"ALTER TABLE {table} ADD COLUMN line_id TEXT DEFAULT 'heat_treatment'"
+                )
+                logger.info(f"表 {table} 已迁移：新增 line_id 列")
 
     def _ensure_chroma(self):
         """初始化 Chroma 客户端
@@ -160,6 +181,7 @@ class MemoryService:
         root_cause: str,
         solution: str,
         quality_score: float = 0.5,
+        line_id: str = "heat_treatment",
     ) -> str:
         """写入短期记忆
 
@@ -169,18 +191,19 @@ class MemoryService:
             root_cause: 根因
             solution: 解决方案
             quality_score: 质量评分
+            line_id: 产线ID（M4-9 多产线隔离）
 
         Returns:
             record_id
         """
         record_id = f"ep_{int(datetime.now().timestamp())}_{uuid.uuid4().hex[:6]}"
         self.db.execute(
-            "INSERT INTO episodic VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO episodic VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (record_id, batch_id, defect_type, root_cause, solution,
-             datetime.now(), quality_score),
+             datetime.now(), quality_score, line_id),
         )
         self.db.commit()
-        logger.info(f"短期记忆已写入: {record_id}")
+        logger.info(f"短期记忆已写入: {record_id} (line={line_id})")
         return record_id
 
     def query_episodic(
@@ -188,6 +211,7 @@ class MemoryService:
         batch_id: Optional[str] = None,
         defect_type: Optional[str] = None,
         days: int = 30,
+        line_id: Optional[str] = None,
     ) -> list[dict]:
         """查询短期记忆
 
@@ -195,6 +219,7 @@ class MemoryService:
             batch_id: 批次ID（可选）
             defect_type: 缺陷类型（可选）
             days: 查询天数
+            line_id: 产线ID过滤（可选，M4-9 多产线隔离）
 
         Returns:
             记录列表
@@ -209,6 +234,9 @@ class MemoryService:
         if defect_type:
             query += " AND defect_type = ?"
             params.append(defect_type)
+        if line_id:
+            query += " AND line_id = ?"
+            params.append(line_id)
 
         query += " ORDER BY created_at DESC"
         cur = self.db.execute(query, params)
@@ -233,11 +261,13 @@ class MemoryService:
 
         document = f"{case.defect_type.value}\n{case.root_cause}\n{case.solution}"
         # M3-9: metadata 扩展工艺参数（Chroma 不支持 None，仅存非空字段）
+        # M4-9: metadata 增加 line_id 支持多产线隔离
         metadata = {
             "defect_type": case.defect_type.value,
             "confidence": case.confidence,
             "created_at": case.created_at.isoformat(),
             "source": case.source,
+            "line_id": case.line_id,
         }
         bp = case.batch_params
         if bp.temperature is not None:
@@ -255,9 +285,10 @@ class MemoryService:
             documents=[document],
             metadatas=[metadata],
         )
-        logger.info(f"长期记忆已写入: {case.case_id}")
+        logger.info(f"长期记忆已写入: {case.case_id} (line={case.line_id})")
 
         # M3-9: 写入后检测知识冲突（不阻止写入，仅告警 + 记录）
+        # M4-9: 冲突检测在 detect_conflicts 内部按 line_id 隔离
         try:
             conflicts = self.detect_conflicts(case)
             for c in conflicts:
@@ -268,12 +299,18 @@ class MemoryService:
 
         return True
 
-    def search_semantic(self, query: str, top_k: int = 3) -> list[dict]:
+    def search_semantic(
+        self,
+        query: str,
+        top_k: int = 3,
+        line_id: Optional[str] = None,
+    ) -> list[dict]:
         """语义检索长期记忆
 
         Args:
             query: 查询文本
             top_k: 返回数量
+            line_id: 产线ID过滤（可选，M4-9 多产线隔离；None 则不过滤）
 
         Returns:
             相似案例列表
@@ -283,7 +320,11 @@ class MemoryService:
             logger.warning("Chroma 不可用，返回空结果")
             return []
 
-        results = self._collection.query(query_texts=[query], n_results=top_k)
+        # M4-9: 按 line_id 过滤（Chroma where 条件）
+        where = {"line_id": line_id} if line_id else None
+        results = self._collection.query(
+            query_texts=[query], n_results=top_k, where=where
+        )
         return self._format_search_results(results)
 
     def _format_search_results(self, results: dict) -> list[dict]:
@@ -311,6 +352,7 @@ class MemoryService:
         action: str,
         score: float,
         comment: Optional[str] = None,
+        line_id: str = "heat_treatment",
     ) -> bool:
         """持久化用户反馈
 
@@ -321,18 +363,19 @@ class MemoryService:
             action: adopted / rejected / partial
             score: 0-1 评分
             comment: 评论文本
+            line_id: 产线ID（M4-9 多产线隔离）
 
         Returns:
             是否成功
         """
         try:
             self.db.execute(
-                "INSERT INTO feedback VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO feedback VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (feedback_id, proposal_id, user_id, action, score,
-                 comment, datetime.now()),
+                 comment, datetime.now(), line_id),
             )
             self.db.commit()
-            logger.info(f"反馈已持久化: {feedback_id}, action={action}, score={score}")
+            logger.info(f"反馈已持久化: {feedback_id}, action={action}, score={score}, line={line_id}")
             return True
         except Exception as e:
             logger.error(f"写入反馈失败: {e}")
@@ -343,8 +386,19 @@ class MemoryService:
         proposal_id: Optional[str] = None,
         user_id: Optional[str] = None,
         days: int = 30,
+        line_id: Optional[str] = None,
     ) -> list[dict]:
-        """查询用户反馈"""
+        """查询用户反馈
+
+        Args:
+            proposal_id: 关联建议ID（可选）
+            user_id: 用户ID（可选）
+            days: 查询天数
+            line_id: 产线ID过滤（可选，M4-9 多产线隔离）
+
+        Returns:
+            反馈记录列表
+        """
         since = datetime.now() - timedelta(days=days)
         query = "SELECT * FROM feedback WHERE created_at >= ?"
         params = [since]
@@ -354,6 +408,9 @@ class MemoryService:
         if user_id:
             query += " AND user_id = ?"
             params.append(user_id)
+        if line_id:
+            query += " AND line_id = ?"
+            params.append(line_id)
         query += " ORDER BY created_at DESC"
         cur = self.db.execute(query, params)
         cols = [d[0] for d in cur.description]
@@ -666,6 +723,8 @@ class MemoryService:
         - soft: 相同根因 + 不同方案（工艺改进，正常但需记录）
         - confidence: 相同场景 + 置信度差异 > 0.3
 
+        M4-9: 按 case.line_id 隔离，只在同产线内检测冲突。
+
         Args:
             case: 待写入的新案例
             top_k: 检索候选数量
@@ -678,8 +737,9 @@ class MemoryService:
             return []
 
         # 用缺陷类型 + 根因关键词检索相似案例
+        # M4-9: 传 line_id 过滤，只在同产线内检测冲突
         query = f"{case.defect_type.value} {case.root_cause}"
-        candidates = self.search_semantic(query, top_k=top_k)
+        candidates = self.search_semantic(query, top_k=top_k, line_id=case.line_id)
 
         conflicts = []
         now = datetime.now()
@@ -713,6 +773,7 @@ class MemoryService:
                     description=f"相同缺陷({case.defect_type.value})+相似参数，根因不同："
                                 f"新='{case.root_cause}' vs 旧='{existing_root}'",
                     created_at=now,
+                    line_id=case.line_id,
                 ))
                 continue  # 硬冲突已记录，跳过软冲突检测
 
@@ -726,6 +787,7 @@ class MemoryService:
                     description=f"相同根因，方案不同："
                                 f"新='{case.solution}' vs 旧='{existing_solution}'",
                     created_at=now,
+                    line_id=case.line_id,
                 ))
 
             # 置信度冲突：置信度差异 > 0.3
@@ -738,6 +800,7 @@ class MemoryService:
                     description=f"相同场景，置信度差异大："
                                 f"新={case.confidence} vs 旧={existing_conf}",
                     created_at=now,
+                    line_id=case.line_id,
                 ))
 
         return conflicts
@@ -824,16 +887,17 @@ class MemoryService:
         """持久化冲突记录到 SQLite
 
         Args:
-            conflict: 冲突记录
+            conflict: 冲突记录（含 line_id）
 
         Returns:
             是否成功
         """
         try:
             self.db.execute(
-                "INSERT INTO conflicts VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO conflicts VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (conflict.conflict_id, conflict.new_case_id, conflict.existing_case_id,
-                 conflict.conflict_type, conflict.description, conflict.created_at),
+                 conflict.conflict_type, conflict.description, conflict.created_at,
+                 conflict.line_id),
             )
             self.db.commit()
             return True
@@ -841,19 +905,31 @@ class MemoryService:
             logger.error(f"保存冲突记录失败: {e}")
             return False
 
-    def list_conflicts(self, limit: int = 100) -> list[dict]:
+    def list_conflicts(
+        self,
+        limit: int = 100,
+        line_id: Optional[str] = None,
+    ) -> list[dict]:
         """列出全部冲突记录（按时间倒序）
 
         Args:
             limit: 最大返回数量
+            line_id: 产线ID过滤（可选，M4-9 多产线隔离）
 
         Returns:
             冲突记录列表
         """
-        cur = self.db.execute(
-            "SELECT * FROM conflicts ORDER BY created_at DESC LIMIT ?",
-            (limit,),
-        )
+        if line_id:
+            cur = self.db.execute(
+                "SELECT * FROM conflicts WHERE line_id = ? "
+                "ORDER BY created_at DESC LIMIT ?",
+                (line_id, limit),
+            )
+        else:
+            cur = self.db.execute(
+                "SELECT * FROM conflicts ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            )
         columns = [d[0] for d in cur.description]
         return [dict(zip(columns, row)) for row in cur.fetchall()]
 

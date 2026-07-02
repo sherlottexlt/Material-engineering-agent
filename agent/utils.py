@@ -124,6 +124,76 @@ def get_process_constraints(process_type: str = "heat_treatment") -> dict:
     return settings.get("process_constraints", {}).get(process_type, {})
 
 
+# ===== M4-9: 产线配置层 =====
+
+@lru_cache()
+def load_line_config(line_id: str = "heat_treatment") -> dict:
+    """加载产线配置（M4-9 多产线抽象层）
+
+    从 config/lines/<line_id>.yaml 加载产线专属配置（标准参数、约束、缺陷类型等）。
+    若配置文件不存在，回退到 heat_treatment 配置。
+
+    Args:
+        line_id: 产线ID（如 heat_treatment / welding / rolling）
+
+    Returns:
+        产线配置 dict，包含 line_id/name/process_type/standard_params/constraints/defect_types 等
+    """
+    lines_dir = CONFIG_DIR / "lines"
+    path = lines_dir / f"{line_id}.yaml"
+    if not path.exists():
+        logger.warning(f"产线配置不存在: {line_id}，回退到 heat_treatment")
+        path = lines_dir / "heat_treatment.yaml"
+        if not path.exists():
+            return {}
+    with open(path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
+
+
+def get_line_standard_params(line_id: str = "heat_treatment") -> dict:
+    """获取产线标准工艺参数（M4-9）
+
+    替代原硬编码的 840/120/5.0 等阈值。
+
+    Args:
+        line_id: 产线ID
+
+    Returns:
+        标准参数 dict，如 {"temperature": 840, "holding_time": 120, "cooling_rate": 5.0}
+    """
+    config = load_line_config(line_id)
+    return config.get("standard_params", {})
+
+
+def get_line_constraints(line_id: str = "heat_treatment") -> dict:
+    """获取产线工艺约束（M4-9）
+
+    Args:
+        line_id: 产线ID
+
+    Returns:
+        约束 dict，如 {"temperature_min": 800, "temperature_max": 1100, ...}
+    """
+    config = load_line_config(line_id)
+    return config.get("constraints", {})
+
+
+def list_available_lines() -> list[str]:
+    """列出全部可用产线ID（M4-9）
+
+    扫描 config/lines/ 目录下的 yaml 文件。
+
+    Returns:
+        产线ID列表，如 ["heat_treatment", "welding"]
+    """
+    lines_dir = CONFIG_DIR / "lines"
+    if not lines_dir.exists():
+        return ["heat_treatment"]
+    return [
+        f.stem for f in lines_dir.glob("*.yaml")
+    ]
+
+
 def setup_tracing():
     """配置 LangSmith trace
 

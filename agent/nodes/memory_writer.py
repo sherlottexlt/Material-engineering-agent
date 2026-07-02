@@ -206,7 +206,9 @@ async def memory_writer(state: AgentState) -> dict:
     """
     trace_id = state.get("trace_id", "unknown")
     batch_id = state.get("batch_id", "unknown")
-    logger.info(f"[MemoryWriter] 开始归档案例, trace_id={trace_id}")
+    # M4-9: 从 state 读取产线ID，贯穿记忆写入
+    line_id = state.get("line_id", "heat_treatment")
+    logger.info(f"[MemoryWriter] 开始归档案例, trace_id={trace_id}, line_id={line_id}")
 
     try:
         memory = _get_memory_service()
@@ -246,8 +248,9 @@ async def memory_writer(state: AgentState) -> dict:
             root_cause=str(root_cause)[:500],
             solution=str(solution)[:500],
             quality_score=confidence,  # M3-6: 用评估值替代写死的 0.7
+            line_id=line_id,  # M4-9: 产线隔离
         )
-        logger.info(f"[MemoryWriter] 短期记忆已写入, batch={batch_id}")
+        logger.info(f"[MemoryWriter] 短期记忆已写入, batch={batch_id}, line={line_id}")
 
         # 2. 写入长期记忆（语义记忆）
         case = CaseRecord(
@@ -267,6 +270,7 @@ async def memory_writer(state: AgentState) -> dict:
             created_at=datetime.now(),
             source="auto",
             tags=["auto_generated"] + root_cause_tags,  # M3-6: 自动根因标签
+            line_id=line_id,  # M4-9: 产线隔离
         )
 
         success = memory.write_semantic(case)
