@@ -1,0 +1,8 @@
+M4-14 降级验证（sqlite_failure 场景）
+
+cases: status=200, degraded=True, classification=degraded_ok
+dashboard: status=200, degraded=True, classification=degraded_ok
+feedback: status=200, degraded=True, classification=degraded_ok
+
+降级率: 3/3 = 100.0%
+验收: ✅ 达标

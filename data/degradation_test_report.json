@@ -1,0 +1,65 @@
+{
+  "test_time": "2026-07-03T02:45:14.581395",
+  "total": 8,
+  "passed": 8,
+  "failed": 0,
+  "pass_rate": 1.0,
+  "results": [
+    {
+      "name": "test_cases_sqlite_degradation",
+      "description": "SQLite 故障时 cases 端点返回 200+空结果+degraded",
+      "status": "PASS",
+      "time_ms": 7362.2,
+      "error": ""
+    },
+    {
+      "name": "test_dashboard_sqlite_degradation",
+      "description": "SQLite 故障时 dashboard 端点返回 200+零值统计+degraded",
+      "status": "PASS",
+      "time_ms": 9.8,
+      "error": ""
+    },
+    {
+      "name": "test_feedback_sqlite_degradation",
+      "description": "SQLite 故障时 feedback 端点返回 200+degraded+暂存队列",
+      "status": "PASS",
+      "time_ms": 5.5,
+      "error": ""
+    },
+    {
+      "name": "test_global_exception_handler",
+      "description": "未处理异常返回 503+degraded",
+      "status": "PASS",
+      "time_ms": 2.6,
+      "error": ""
+    },
+    {
+      "name": "test_sqlite_init_fallback",
+      "description": "SQLite 初始化失败降级为内存数据库",
+      "status": "PASS",
+      "time_ms": 4541.7,
+      "error": ""
+    },
+    {
+      "name": "test_wal_mode_enabled",
+      "description": "SQLite 启用 WAL 模式",
+      "status": "PASS",
+      "time_ms": 0.0,
+      "error": ""
+    },
+    {
+      "name": "test_get_line_stats_cache",
+      "description": "get_line_stats 60 秒内返回缓存",
+      "status": "PASS",
+      "time_ms": 4520.6,
+      "error": ""
+    },
+    {
+      "name": "test_llm_max_retries",
+      "description": "get_llm 返回的客户端 max_retries=3",
+      "status": "PASS",
+      "time_ms": 6.0,
+      "error": ""
+    }
+  ]
+}

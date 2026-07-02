@@ -62,6 +62,9 @@ def get_llm(role: str = "planner", temperature: Optional[float] = None) -> ChatO
     temp = temperature if temperature is not None else llm_config.get("temperature", 0.0)
     # M2 迭代修复：统一加 request_timeout，防止 LLM 调用无限卡住
     request_timeout = llm_config.get("request_timeout", 120)
+    # M4-14: LLM 重试（读取 settings.yaml retry 配置，tenacity 已装但用 openai client 内置重试）
+    retry_config = llm_config.get("retry", {})
+    max_retries = retry_config.get("max_attempts", 3)
 
     # 根据 provider 构造不同的客户端
     if provider == "qwen":
@@ -71,6 +74,7 @@ def get_llm(role: str = "planner", temperature: Optional[float] = None) -> ChatO
             openai_api_key=os.getenv("QWEN_API_KEY", ""),
             openai_api_base="https://dashscope.aliyuncs.com/compatible-mode/v1",
             request_timeout=request_timeout,
+            max_retries=max_retries,
         )
     elif provider == "deepseek":
         return ChatOpenAI(
@@ -79,6 +83,7 @@ def get_llm(role: str = "planner", temperature: Optional[float] = None) -> ChatO
             openai_api_key=os.getenv("DEEPSEEK_API_KEY", ""),
             openai_api_base="https://api.deepseek.com",
             request_timeout=request_timeout,
+            max_retries=max_retries,
         )
     elif provider == "openai":
         return ChatOpenAI(
@@ -86,6 +91,7 @@ def get_llm(role: str = "planner", temperature: Optional[float] = None) -> ChatO
             temperature=temp,
             openai_api_key=os.getenv("OPENAI_API_KEY", ""),
             request_timeout=request_timeout,
+            max_retries=max_retries,
         )
     elif provider == "ollama":
         # Ollama 通过 OpenAI 兼容 API 运行
@@ -96,6 +102,7 @@ def get_llm(role: str = "planner", temperature: Optional[float] = None) -> ChatO
             openai_api_key="ollama",  # Ollama 不需要真实 key，但不能为空
             openai_api_base=base_url,
             request_timeout=request_timeout,
+            max_retries=max_retries,
         )
     elif provider == "siliconflow":
         # 硅基流动 OpenAI 兼容 API
@@ -105,6 +112,7 @@ def get_llm(role: str = "planner", temperature: Optional[float] = None) -> ChatO
             openai_api_key=os.getenv("SILICONFLOW_API_KEY", ""),
             openai_api_base="https://api.siliconflow.cn/v1",
             request_timeout=request_timeout,
+            max_retries=max_retries,
         )
     else:
         raise ValueError(f"不支持的 LLM provider: {provider}，可选: qwen/deepseek/openai/ollama/siliconflow")

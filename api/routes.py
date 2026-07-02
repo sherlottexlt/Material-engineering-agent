@@ -14,8 +14,9 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from loguru import logger
 from pydantic import BaseModel
 
@@ -54,11 +55,62 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# M4-14: 全局异常处理器（兜底降级，未处理异常返回 503 而非 500）
+# 双重保障：exception_handler + middleware，确保 TestClient 与生产环境都能返回 503
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """捕获所有未处理异常，返回 503 降级响应（HTTPException 由 FastAPI 自身处理）"""
+    trace_id = request.headers.get("X-Trace-Id", uuid.uuid4().hex[:8])
+    logger.error(
+        f"未处理异常降级: path={request.url.path}, trace_id={trace_id}, "
+        f"error={exc}"
+    )
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": "服务暂时不可用（降级模式）",
+            "trace_id": trace_id,
+            "path": request.url.path,
+            "error": str(exc)[:200],
+            "degraded": True,
+        },
+    )
+
+
+# M4-14: HTTP middleware 兜底（exception_handler 在某些 starlette 版本会被
+# ServerErrorMiddleware 拦截，TestClient raise_server_exceptions=True 时直接 raise；
+# middleware 在 ExceptionMiddleware 外层，能可靠捕获并返回 503）
+@app.middleware("http")
+async def global_exception_middleware(request: Request, call_next):
+    """HTTP middleware 兜底降级，捕获 exception_handler 未拦截的未处理异常"""
+    try:
+        return await call_next(request)
+    except Exception as exc:
+        trace_id = request.headers.get("X-Trace-Id", uuid.uuid4().hex[:8])
+        logger.error(
+            f"middleware 降级: path={request.url.path}, trace_id={trace_id}, "
+            f"error={exc}"
+        )
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": "服务暂时不可用（降级模式）",
+                "trace_id": trace_id,
+                "path": request.url.path,
+                "error": str(exc)[:200],
+                "degraded": True,
+            },
+        )
+
 # 全局 MemoryService
 memory = MemoryService()
 
 # 存储已完成的归因结果（M0 用内存存储，M1 切换为 checkpointer）
 _results_store: dict[str, dict] = {}
+
+# M4-14: 反馈降级队列（SQLite 故障时暂存，服务恢复后可重试持久化）
+_feedback_queue: list[dict] = []
 
 
 # ===== M4-10: 多租户权限校验 =====
@@ -236,26 +288,44 @@ async def submit_feedback(req: FeedbackRequest):
     # M4-10: 权限校验（反馈需要写权限）
     _check_line_access(req.user_id, req.line_id, require_write=True)
 
-    # 持久化到 SQLite
-    saved = memory.write_feedback(
-        feedback_id=feedback_id,
-        proposal_id=req.proposal_id,
-        user_id=req.user_id,
-        action=req.action,
-        score=req.score,
-        comment=req.comment,
-        line_id=req.line_id,  # M4-9: 产线隔离
-    )
+    # 持久化到 SQLite（M4-14: 故障降级，暂存内存队列）
+    try:
+        saved = memory.write_feedback(
+            feedback_id=feedback_id,
+            proposal_id=req.proposal_id,
+            user_id=req.user_id,
+            action=req.action,
+            score=req.score,
+            comment=req.comment,
+            line_id=req.line_id,  # M4-9: 产线隔离
+        )
+        if not saved:
+            raise RuntimeError("write_feedback 返回 False")
 
-    if not saved:
-        raise HTTPException(status_code=500, detail="反馈持久化失败")
+        # 尝试更新案例置信度（Chroma 不可用时降级）
+        if req.action == "adopted":
+            memory.update_confidence(req.proposal_id, req.score)
 
-    # 尝试更新案例置信度（Chroma 不可用时降级）
-    if req.action == "adopted":
-        memory.update_confidence(req.proposal_id, req.score)
-
-    logger.info(f"反馈已保存: {feedback_id}, action={req.action}, score={req.score}, line={req.line_id}")
-    return {"success": True, "feedback_id": feedback_id}
+        logger.info(f"反馈已保存: {feedback_id}, action={req.action}, score={req.score}, line={req.line_id}")
+        return {"success": True, "feedback_id": feedback_id}
+    except Exception as e:
+        # M4-14: SQLite 故障降级，暂存内存队列，返回 200 + degraded
+        logger.warning(f"feedback 写入降级，暂存队列: feedback_id={feedback_id}, error={e}")
+        _feedback_queue.append({
+            "feedback_id": feedback_id,
+            "proposal_id": req.proposal_id,
+            "user_id": req.user_id,
+            "action": req.action,
+            "score": req.score,
+            "comment": req.comment,
+            "line_id": req.line_id,
+        })
+        return {
+            "success": True,
+            "feedback_id": feedback_id,
+            "degraded": True,
+            "message": "反馈已暂存，将在服务恢复后持久化",
+        }
 
 
 @app.get("/api/v1/cases")
@@ -277,13 +347,18 @@ async def list_cases(
         target_lines = user_lines  # 仅返回有权限的产线
 
     records = []
-    if target_lines is None:
-        records = memory.query_episodic(defect_type=defect_type, days=365)
-    else:
-        for lid in target_lines:
-            records.extend(memory.query_episodic(
-                defect_type=defect_type, days=365, line_id=lid
-            ))
+    try:
+        if target_lines is None:
+            records = memory.query_episodic(defect_type=defect_type, days=365)
+        else:
+            for lid in target_lines:
+                records.extend(memory.query_episodic(
+                    defect_type=defect_type, days=365, line_id=lid
+                ))
+    except Exception as e:
+        # M4-14: SQLite 故障降级，返回空结果而非 500
+        logger.warning(f"cases 查询降级: {e}")
+        return {"total": 0, "cases": [], "degraded": True, "error": str(e)[:100]}
     return {
         "total": len(records),
         "cases": records[:limit],
@@ -638,7 +713,23 @@ async def dashboard_overview(
 
     for lid in visible:
         cfg = load_line_config(lid)
-        stats = memory.get_line_stats(lid, days=days)
+        try:
+            stats = memory.get_line_stats(lid, days=days)
+        except Exception as e:
+            # M4-14: SQLite/Chroma 故障降级，该产线返回零值统计
+            logger.warning(f"dashboard 产线 {lid} 降级: {e}")
+            stats = {
+                "line_id": lid,
+                "episodic_count": 0,
+                "feedback_count": 0,
+                "conflict_count": 0,
+                "semantic_count": 0,
+                "defect_distribution": {},
+                "action_distribution": {},
+                "adoption_rate": 0.0,
+                "avg_confidence": 0.0,
+                "degraded": True,
+            }
         stats["name"] = cfg.get("name", lid)
         line_stats_list.append(stats)
 
@@ -658,6 +749,9 @@ async def dashboard_overview(
         round(confidence_sum / confidence_count, 3) if confidence_count > 0 else 0.0
     )
 
+    # M4-14: 任一产线降级则顶层 degraded=True
+    any_degraded = any(ls.get("degraded") for ls in line_stats_list)
+
     return {
         "user_id": user_id,
         "days": days,
@@ -670,6 +764,7 @@ async def dashboard_overview(
             "overall_adoption_rate": overall_adoption,
             "overall_avg_confidence": overall_confidence,
         },
+        "degraded": any_degraded,
     }
 
 

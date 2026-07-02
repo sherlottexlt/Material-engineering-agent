@@ -66,19 +66,31 @@ class MemoryService:
         chroma_port: int = 8000,
     ):
         self.db_path = Path(db_path)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.retention_days = retention_days
         self.collection_name = chroma_collection
         self.chroma_path = Path(chroma_path) if chroma_path else DEFAULT_CHROMA_PATH
-        self.chroma_path.mkdir(parents=True, exist_ok=True)
         # M3-1: 支持连接 Docker 部署的 Chroma 服务端（HTTP 模式）
         # 优先级：显式参数 > 环境变量 CHROMA_HOST > None（降级为嵌入式 PersistentClient）
         self.chroma_host = chroma_host or os.environ.get("CHROMA_HOST")
         self.chroma_port = int(os.environ.get("CHROMA_PORT", chroma_port))
 
-        # 初始化 SQLite
-        self.db = sqlite3.connect(str(self.db_path))
-        self._init_db()
+        # M4-14: 初始化 SQLite（容错 + WAL 模式提升并发写入；目录创建失败也降级为内存库）
+        self.db = None
+        try:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            self.db = sqlite3.connect(str(self.db_path))
+            self.db.execute("PRAGMA journal_mode=WAL")  # M4-14: WAL 模式
+            self._init_db()
+        except Exception as e:
+            logger.error(f"SQLite 初始化失败，降级为内存数据库: {e}")
+            self.db = sqlite3.connect(":memory:")
+            self._init_db()
+
+        # Chroma 目录创建容错
+        try:
+            self.chroma_path.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            logger.warning(f"Chroma 目录创建失败（降级模式）: {e}")
 
         # 初始化 Chroma（延迟导入，避免无 chroma 时报错）
         self._chroma_client = None
@@ -735,6 +747,16 @@ class MemoryService:
                 "avg_confidence": float,      # 平均置信度
             }
         """
+        # M4-14: TTL 缓存（60 秒），减少 Chroma 全量扫描开销
+        import time as _time
+        cache_key = (line_id, days)
+        if not hasattr(self, "_stats_cache"):
+            self._stats_cache = {}
+        if cache_key in self._stats_cache:
+            cached_stats, cached_time = self._stats_cache[cache_key]
+            if _time.time() - cached_time < 60:
+                return cached_stats.copy()
+
         since = datetime.now() - timedelta(days=days)
 
         # 短期记忆统计（按 line_id + 时间过滤）
@@ -801,7 +823,7 @@ class MemoryService:
         except Exception as e:
             logger.warning(f"[M4-11] 统计产线 {line_id} 长期记忆失败: {e}")
 
-        return {
+        result = {
             "line_id": line_id,
             "episodic_count": episodic_count,
             "feedback_count": feedback_count,
@@ -812,6 +834,8 @@ class MemoryService:
             "adoption_rate": adoption_rate,
             "avg_confidence": round(avg_confidence, 3),
         }
+        self._stats_cache[cache_key] = (result, _time.time())
+        return result
 
     # ===== 知识冲突检测（M3-9）=====
 

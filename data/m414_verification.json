@@ -1,0 +1,29 @@
+{
+  "scenario": "sqlite_failure",
+  "m4_14_fix": "cases/dashboard/feedback 端点加 try/except + 降级返回",
+  "total_endpoints": 3,
+  "degraded_ok": 3,
+  "failed": 0,
+  "degradation_rate": 1.0,
+  "results": [
+    {
+      "endpoint": "cases",
+      "status_code": 200,
+      "degraded": true,
+      "classification": "degraded_ok"
+    },
+    {
+      "endpoint": "dashboard",
+      "status_code": 200,
+      "degraded": true,
+      "classification": "degraded_ok"
+    },
+    {
+      "endpoint": "feedback",
+      "status_code": 200,
+      "degraded": true,
+      "classification": "degraded_ok"
+    }
+  ],
+  "acceptance": "✅ 达标"
+}
