@@ -22,7 +22,13 @@ from pydantic import BaseModel
 from agent.memory.memory_service import MemoryService
 from agent.orchestrator import build_orchestrator
 from agent.utils import setup_tracing
-from models.entities import UserFeedback
+from models.entities import (
+    BatchParams,
+    CaseRecord,
+    DefectType,
+    ProcessType,
+    UserFeedback,
+)
 from models.state import AgentState
 
 # 初始化 trace
@@ -248,6 +254,119 @@ async def list_conflicts(limit: int = 100):
     """列出全部知识冲突记录（按时间倒序）"""
     records = memory.list_conflicts(limit=limit)
     return {"total": len(records), "records": records}
+
+
+# ===== M3-7 案例库 CRUD 端点 =====
+
+class CaseCreateRequest(BaseModel):
+    """新增案例请求"""
+    case_id: Optional[str] = None  # 留空自动生成
+    defect_type: str  # DefectType.value
+    batch_id: str
+    process_type: str = "heat_treatment"  # ProcessType.value
+    temperature: Optional[float] = None
+    holding_time: Optional[float] = None
+    cooling_rate: Optional[float] = None
+    root_cause: str
+    solution: str = ""
+    confidence: float = 0.5
+    tags: list[str] = []
+
+
+class CaseUpdateRequest(BaseModel):
+    """更新案例请求（所有字段可选）"""
+    root_cause: Optional[str] = None
+    solution: Optional[str] = None
+    confidence: Optional[float] = None
+    tags: Optional[list[str]] = None  # None=不更新，[]=清空
+
+
+@app.post("/api/v1/memory/cases")
+async def create_case(req: CaseCreateRequest):
+    """新增长期记忆案例（M3-7 Create）"""
+    case_id = req.case_id or f"case-{uuid.uuid4().hex[:8]}"
+    try:
+        case = CaseRecord(
+            case_id=case_id,
+            defect_type=DefectType(req.defect_type),
+            batch_params=BatchParams(
+                batch_id=req.batch_id,
+                process_type=ProcessType(req.process_type),
+                temperature=req.temperature,
+                holding_time=req.holding_time,
+                cooling_rate=req.cooling_rate,
+                start_time=datetime.now(),
+            ),
+            root_cause=req.root_cause,
+            solution=req.solution,
+            confidence=req.confidence,
+            source="manual",
+            tags=req.tags,
+        )
+    except (ValueError, TypeError) as e:
+        raise HTTPException(status_code=400, detail=f"参数非法: {e}")
+
+    ok = memory.write_semantic(case)
+    if not ok:
+        raise HTTPException(
+            status_code=503,
+            detail="写入失败：Chroma 不可用或 ID 已存在",
+        )
+
+    # 检测冲突并返回告警
+    conflicts = memory.detect_conflicts(case)
+    return {
+        "case_id": case.case_id,
+        "created": True,
+        "conflicts_detected": len(conflicts),
+        "conflicts": [
+            {
+                "type": c.conflict_type,
+                "existing_case_id": c.existing_case_id,
+                "description": c.description,
+            }
+            for c in conflicts
+        ],
+    }
+
+
+@app.get("/api/v1/memory/cases/{case_id}")
+async def get_case(case_id: str):
+    """获取单个案例（M3-7 Read）"""
+    record = memory.get_semantic_case(case_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"案例 {case_id} 不存在")
+    return record
+
+
+@app.put("/api/v1/memory/cases/{case_id}")
+async def update_case(case_id: str, req: CaseUpdateRequest):
+    """更新案例字段（M3-7 Update，部分更新）"""
+    ok = memory.update_semantic(
+        case_id=case_id,
+        root_cause=req.root_cause,
+        solution=req.solution,
+        confidence=req.confidence,
+        tags=req.tags,
+    )
+    if not ok:
+        raise HTTPException(
+            status_code=404,
+            detail=f"更新失败：案例 {case_id} 不存在或 Chroma 不可用",
+        )
+    return {"case_id": case_id, "updated": True}
+
+
+@app.delete("/api/v1/memory/cases/{case_id}")
+async def delete_case(case_id: str):
+    """删除案例（M3-7 Delete，同时清理相关冲突记录）"""
+    ok = memory.delete_semantic(case_id)
+    if not ok:
+        raise HTTPException(
+            status_code=503,
+            detail="删除失败：Chroma 不可用",
+        )
+    return {"case_id": case_id, "deleted": True}
 
 
 @app.websocket("/api/v1/stream")

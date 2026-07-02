@@ -28,9 +28,9 @@ from models.state import AgentState
 
 
 class _FakeChromaCollection:
-    """模拟 Chroma collection 的内存实现，覆盖 add/query/get/update 接口。
+    """模拟 Chroma collection 的内存实现，覆盖 add/query/get/update/delete 接口。
 
-    用关键词重叠度近似语义相关度，足够测试 MemoryService 的写入/检索/更新逻辑。
+    用关键词重叠度近似语义相关度，足够测试 MemoryService 的写入/检索/更新/删除逻辑。
     """
 
     def __init__(self):
@@ -64,21 +64,45 @@ class _FakeChromaCollection:
             results["ids"][0].append(doc_id)
         return results
 
-    def get(self, ids):
-        metadatas, documents = [], []
-        for doc_id in ids:
-            if doc_id in self._store:
-                metadatas.append(dict(self._store[doc_id]["metadata"]))
-                documents.append(self._store[doc_id]["document"])
-            else:
-                metadatas.append(None)
-                documents.append(None)
-        return {"metadatas": metadatas, "documents": documents, "ids": ids}
+    def get(self, ids=None, limit=None, include=None):
+        """支持按 ids 查询或全量查询（limit 限制）。
 
-    def update(self, ids, metadatas):
+        - ids 提供时：只返回存在的 ID（过滤不存在的，与真实 Chroma 一致）
+        - ids 为 None 时：返回全部（受 limit 限制）
+        """
+        if ids is not None:
+            out_ids, out_docs, out_metas = [], [], []
+            for doc_id in ids:
+                if doc_id in self._store:
+                    out_ids.append(doc_id)
+                    out_docs.append(self._store[doc_id]["document"])
+                    out_metas.append(dict(self._store[doc_id]["metadata"]))
+            return {"ids": out_ids, "documents": out_docs, "metadatas": out_metas}
+
+        # 全量查询
+        items = list(self._store.items())
+        if limit is not None:
+            items = items[:limit]
+        return {
+            "ids": [doc_id for doc_id, _ in items],
+            "documents": [item["document"] for _, item in items],
+            "metadatas": [dict(item["metadata"]) for _, item in items],
+        }
+
+    def update(self, ids, metadatas=None, documents=None):
+        """更新 metadata 和/或 document（部分更新）"""
         for i, doc_id in enumerate(ids):
-            if doc_id in self._store and i < len(metadatas):
-                self._store[doc_id]["metadata"].update(metadatas[i] or {})
+            if doc_id not in self._store:
+                continue
+            if metadatas is not None and i < len(metadatas) and metadatas[i]:
+                self._store[doc_id]["metadata"].update(metadatas[i])
+            if documents is not None and i < len(documents):
+                self._store[doc_id]["document"] = documents[i]
+
+    def delete(self, ids):
+        """删除指定 ids"""
+        for doc_id in ids:
+            self._store.pop(doc_id, None)
 
 
 @pytest.fixture
@@ -630,6 +654,185 @@ class TestConflictDetection:
         # 再次检测同一个案例，不应产生冲突
         conflicts = memory.detect_conflicts(case)
         assert len(conflicts) == 0
+
+
+class TestCaseCRUD:
+    """M3-7 案例库 CRUD 测试"""
+
+    def test_get_semantic_case_returns_case(self, memory_with_chroma):
+        """应能按 ID 获取案例"""
+        memory = memory_with_chroma
+        case = _make_case(case_id="C_GET1", root_cause="保温时间不足", solution="holding_time +15")
+        memory.write_semantic(case)
+
+        record = memory.get_semantic_case("C_GET1")
+        assert record is not None
+        assert record["id"] == "C_GET1"
+        assert "保温时间不足" in record["document"]
+        assert record["metadata"]["defect_type"] == "hardness_low"
+
+    def test_get_semantic_case_nonexistent_returns_none(self, memory_with_chroma):
+        """获取不存在的案例应返回 None"""
+        memory = memory_with_chroma
+        assert memory.get_semantic_case("nonexistent_id") is None
+
+    def test_get_semantic_case_without_chroma_returns_none(self, memory):
+        """无 Chroma 时获取应返回 None"""
+        assert memory.get_semantic_case("any_id") is None
+
+    def test_update_semantic_root_cause(self, memory_with_chroma):
+        """应能只更新根因（保留其他字段）"""
+        memory = memory_with_chroma
+        case = _make_case(case_id="C_UP1", root_cause="旧根因", solution="旧方案", confidence=0.8)
+        memory.write_semantic(case)
+
+        ok = memory.update_semantic("C_UP1", root_cause="新根因")
+        assert ok is True
+
+        record = memory.get_semantic_case("C_UP1")
+        assert "新根因" in record["document"]
+        assert "旧方案" in record["document"]  # solution 保留
+        assert record["metadata"]["confidence"] == 0.8  # confidence 保留
+
+    def test_update_semantic_confidence(self, memory_with_chroma):
+        """应能只更新置信度"""
+        memory = memory_with_chroma
+        case = _make_case(case_id="C_UP2", confidence=0.5)
+        memory.write_semantic(case)
+
+        ok = memory.update_semantic("C_UP2", confidence=0.95)
+        assert ok is True
+
+        record = memory.get_semantic_case("C_UP2")
+        assert abs(record["metadata"]["confidence"] - 0.95) < 0.01
+
+    def test_update_semantic_solution(self, memory_with_chroma):
+        """应能只更新解决方案"""
+        memory = memory_with_chroma
+        case = _make_case(case_id="C_UP3", solution="旧方案")
+        memory.write_semantic(case)
+
+        ok = memory.update_semantic("C_UP3", solution="新方案")
+        assert ok is True
+
+        record = memory.get_semantic_case("C_UP3")
+        assert "新方案" in record["document"]
+        assert "旧方案" not in record["document"]
+
+    def test_update_semantic_tags_set(self, memory_with_chroma):
+        """应能设置标签（存为逗号分隔字符串）"""
+        memory = memory_with_chroma
+        case = _make_case(case_id="C_TAG1", tags=[])
+        memory.write_semantic(case)
+
+        ok = memory.update_semantic("C_TAG1", tags=["紧急", "参考案例"])
+        assert ok is True
+
+        record = memory.get_semantic_case("C_TAG1")
+        assert record["metadata"]["tags"] == "紧急,参考案例"
+
+    def test_update_semantic_tags_clear(self, memory_with_chroma):
+        """空标签列表应清空标签字段"""
+        memory = memory_with_chroma
+        case = _make_case(case_id="C_TAG2", tags=["紧急"])
+        memory.write_semantic(case)
+        # 确认标签已写入
+        assert memory.get_semantic_case("C_TAG2")["metadata"].get("tags") == "紧急"
+
+        ok = memory.update_semantic("C_TAG2", tags=[])
+        assert ok is True
+
+        record = memory.get_semantic_case("C_TAG2")
+        assert "tags" not in record["metadata"]
+
+    def test_update_semantic_nonexistent_returns_false(self, memory_with_chroma):
+        """更新不存在的案例应返回 False"""
+        memory = memory_with_chroma
+        assert memory.update_semantic("nonexistent", root_cause="x") is False
+
+    def test_update_semantic_without_chroma_returns_false(self, memory):
+        """无 Chroma 时更新应返回 False"""
+        assert memory.update_semantic("any", root_cause="x") is False
+
+    def test_delete_semantic_removes_case(self, memory_with_chroma):
+        """应能删除案例"""
+        memory = memory_with_chroma
+        case = _make_case(case_id="C_DEL1")
+        memory.write_semantic(case)
+        assert memory.get_semantic_case("C_DEL1") is not None
+
+        ok = memory.delete_semantic("C_DEL1")
+        assert ok is True
+        assert memory.get_semantic_case("C_DEL1") is None
+
+    def test_delete_semantic_nonexistent_returns_true(self, memory_with_chroma):
+        """删除不存在的案例应返回 True（幂等，与真实 Chroma 一致）"""
+        memory = memory_with_chroma
+        assert memory.delete_semantic("nonexistent") is True
+
+    def test_delete_semantic_without_chroma_returns_false(self, memory):
+        """无 Chroma 时删除应返回 False"""
+        assert memory.delete_semantic("any") is False
+
+    def test_delete_semantic_cleans_conflicts(self, memory_with_chroma):
+        """删除案例应清理引用该案例的冲突记录"""
+        memory = memory_with_chroma
+        # 写入两条相似但根因不同的案例 → 产生 hard 冲突
+        case1 = _make_case_with_params("C_DC1", root_cause="保温时间不足", confidence=0.8)
+        memory.write_semantic(case1)
+        case2 = _make_case_with_params("C_DC2", root_cause="冷却速率过低", confidence=0.7)
+        memory.write_semantic(case2)
+
+        conflicts_before = memory.list_conflicts()
+        assert len(conflicts_before) >= 1
+
+        # 删除新案例 C_DC2（作为 new_case_id）
+        memory.delete_semantic("C_DC2")
+
+        # 引用 C_DC2 的冲突记录应被清理
+        conflicts_after = memory.list_conflicts()
+        for c in conflicts_after:
+            assert c["new_case_id"] != "C_DC2"
+            assert c["existing_case_id"] != "C_DC2"
+
+    def test_write_semantic_persists_tags(self, memory_with_chroma):
+        """写入案例时 tags 应存为逗号分隔字符串"""
+        memory = memory_with_chroma
+        case = _make_case(case_id="C_WT", tags=["紧急", "参考", "实验证实"])
+        memory.write_semantic(case)
+
+        record = memory.get_semantic_case("C_WT")
+        assert record["metadata"]["tags"] == "紧急,参考,实验证实"
+
+    def test_crud_full_cycle(self, memory_with_chroma):
+        """完整 CRUD 生命周期：创建 → 读取 → 更新 → 删除"""
+        memory = memory_with_chroma
+
+        # Create
+        case = _make_case(case_id="C_CRUD", root_cause="初始根因", confidence=0.5, tags=["v1"])
+        memory.write_semantic(case)
+        assert memory.get_semantic_case("C_CRUD") is not None
+
+        # Read
+        record = memory.get_semantic_case("C_CRUD")
+        assert record["metadata"]["defect_type"] == "hardness_low"
+        assert record["metadata"]["tags"] == "v1"
+
+        # Update（根因 + 置信度 + 标签）
+        memory.update_semantic(
+            "C_CRUD",
+            root_cause="修正根因",
+            confidence=0.9,
+            tags=["v2", "已修正"],
+        )
+        record = memory.get_semantic_case("C_CRUD")
+        assert "修正根因" in record["document"]
+        assert abs(record["metadata"]["confidence"] - 0.9) < 0.01
+        assert record["metadata"]["tags"] == "v2,已修正"
+
+        # Delete
+        memory.delete_semantic("C_CRUD")
+        assert memory.get_semantic_case("C_CRUD") is None
 
 
 class _RecordingMemoryService:

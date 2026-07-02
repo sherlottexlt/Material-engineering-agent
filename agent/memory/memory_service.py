@@ -221,6 +221,9 @@ class MemoryService:
             metadata["holding_time"] = bp.holding_time
         if bp.cooling_rate is not None:
             metadata["cooling_rate"] = bp.cooling_rate
+        # M3-7: 标签存储为逗号分隔字符串（Chroma metadata 不支持 list）
+        if case.tags:
+            metadata["tags"] = ",".join(case.tags)
 
         self._collection.add(
             ids=[case.case_id],
@@ -687,6 +690,139 @@ class MemoryService:
         )
         columns = [d[0] for d in cur.description]
         return [dict(zip(columns, row)) for row in cur.fetchall()]
+
+    # ===== M3-7: 案例库 CRUD =====
+
+    def get_semantic_case(self, case_id: str) -> Optional[dict]:
+        """获取单个长期记忆案例
+
+        Args:
+            case_id: 案例 ID
+
+        Returns:
+            案例字典（id/document/metadata），不存在返回 None
+        """
+        self._ensure_chroma()
+        if self._collection is None:
+            return None
+        try:
+            result = self._collection.get(
+                ids=[case_id], include=["metadatas", "documents"]
+            )
+            ids = result.get("ids", [])
+            if not ids:
+                return None
+            return {
+                "id": ids[0],
+                "document": (result.get("documents") or [""])[0],
+                "metadata": (result.get("metadatas") or [{}])[0],
+            }
+        except Exception as e:
+            logger.error(f"获取案例 {case_id} 失败: {e}")
+            return None
+
+    def update_semantic(
+        self,
+        case_id: str,
+        root_cause: Optional[str] = None,
+        solution: Optional[str] = None,
+        confidence: Optional[float] = None,
+        tags: Optional[list[str]] = None,
+    ) -> bool:
+        """更新长期记忆案例的字段（部分更新）
+
+        未传入的字段保持原值。Chroma 的 update 会覆写整个 document/metadata，
+        因此先 get 旧值再合并。
+
+        Args:
+            case_id: 案例 ID
+            root_cause: 新根因（None 表示不更新）
+            solution: 新方案（None 表示不更新）
+            confidence: 新置信度（None 表示不更新）
+            tags: 新标签列表（None 表示不更新；空列表表示清空标签）
+
+        Returns:
+            是否成功（案例不存在或 Chroma 不可用返回 False）
+        """
+        self._ensure_chroma()
+        if self._collection is None:
+            logger.warning("Chroma 不可用，跳过更新")
+            return False
+
+        existing = self.get_semantic_case(case_id)
+        if existing is None:
+            logger.warning(f"案例 {case_id} 不存在，无法更新")
+            return False
+
+        old_meta = dict(existing.get("metadata") or {})
+        old_doc = existing.get("document") or ""
+        # 旧 document 形如 "{defect_type}\n{root_cause}\n{solution}"
+        parts = old_doc.split("\n", 2)
+        old_defect = parts[0] if len(parts) > 0 else ""
+        old_root = parts[1] if len(parts) > 1 else ""
+        old_solution = parts[2] if len(parts) > 2 else ""
+
+        new_root = root_cause if root_cause is not None else old_root
+        new_solution = solution if solution is not None else old_solution
+        new_doc = f"{old_defect}\n{new_root}\n{new_solution}"
+
+        new_meta = dict(old_meta)
+        if confidence is not None:
+            new_meta["confidence"] = float(confidence)
+        if tags is not None:
+            # 空列表清空标签，非空列表覆盖
+            if tags:
+                new_meta["tags"] = ",".join(tags)
+            else:
+                new_meta.pop("tags", None)
+
+        try:
+            self._collection.update(
+                ids=[case_id],
+                documents=[new_doc],
+                metadatas=[new_meta],
+            )
+            logger.info(f"案例 {case_id} 已更新（root_cause={root_cause is not None}, "
+                        f"solution={solution is not None}, confidence={confidence is not None}, "
+                        f"tags={tags is not None}）")
+            return True
+        except Exception as e:
+            logger.error(f"更新案例 {case_id} 失败: {e}")
+            return False
+
+    def delete_semantic(self, case_id: str) -> bool:
+        """从长期记忆中删除案例
+
+        同时清理引用该案例的冲突记录（new_case_id 或 existing_case_id 等于 case_id）。
+
+        Args:
+            case_id: 案例 ID
+
+        Returns:
+            是否成功（Chroma 不可用返回 False；案例不存在仍返回 True）
+        """
+        self._ensure_chroma()
+        if self._collection is None:
+            logger.warning("Chroma 不可用，跳过删除")
+            return False
+        try:
+            self._collection.delete(ids=[case_id])
+            logger.info(f"案例 {case_id} 已从长期记忆删除")
+        except Exception as e:
+            logger.error(f"删除案例 {case_id} 失败: {e}")
+            return False
+
+        # 清理引用该案例的冲突记录
+        try:
+            self.db.execute(
+                "DELETE FROM conflicts WHERE new_case_id = ? OR existing_case_id = ?",
+                (case_id, case_id),
+            )
+            self.db.commit()
+        except Exception as e:
+            logger.error(f"清理案例 {case_id} 的冲突记录失败: {e}")
+
+        return True
 
     # ===== 遗忘机制 =====
 

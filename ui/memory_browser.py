@@ -1,5 +1,5 @@
 """
-MetaCraft Agent 记忆浏览界面（M3-12）
+MetaCraft Agent 记忆浏览界面（M3-12 / M3-7）
 
 展示 Agent 当前"记得"什么，回答记忆系统是否在正确积累/检索的问题。
 直连 MemoryService，无需启动 API 服务器。
@@ -10,11 +10,19 @@ MetaCraft Agent 记忆浏览界面（M3-12）
 """
 from __future__ import annotations
 
+import uuid
+from datetime import datetime
 from typing import Optional
 
 import streamlit as st
 
 from agent.memory.memory_service import MemoryService
+from models.entities import (
+    BatchParams,
+    CaseRecord,
+    DefectType,
+    ProcessType,
+)
 
 
 @st.cache_resource(show_spinner=False)
@@ -272,14 +280,270 @@ def _render_feedback_table(records: list[dict]):
     )
 
 
-def render_memory_browser():
-    """渲染记忆浏览界面（M3-12 主入口）
+def _parse_tags_input(tags_input: str) -> list[str]:
+    """将逗号分隔的标签字符串解析为列表（去重 + 去空白）"""
+    if not tags_input:
+        return []
+    parts = [t.strip() for t in tags_input.split(",") if t.strip()]
+    # 去重保序
+    seen = set()
+    result = []
+    for p in parts:
+        if p not in seen:
+            seen.add(p)
+            result.append(p)
+    return result
 
-    四个 Tab：概览 / 短期记忆 / 长期记忆 / 用户反馈
+
+def _render_case_create_form(memory: MemoryService):
+    """渲染新增案例表单（M3-7 Create）"""
+    with st.expander("➕ 新增案例", expanded=False):
+        with st.form("case_create_form", clear_on_submit=True):
+            c1, c2 = st.columns(2)
+            with c1:
+                case_id = st.text_input(
+                    "案例 ID",
+                    value=f"case-{uuid.uuid4().hex[:8]}",
+                    help="留空将自动生成；重复 ID 写入会失败",
+                )
+                defect_type = st.selectbox(
+                    "缺陷类型",
+                    options=[e.value for e in DefectType],
+                    index=0,
+                )
+                root_cause = st.text_area("根因分析", height=80)
+                confidence = st.slider("置信度", 0.0, 1.0, 0.5, 0.05)
+            with c2:
+                batch_id = st.text_input("批次编号", value="B-MANUAL")
+                process_type = st.selectbox(
+                    "工艺类型",
+                    options=[e.value for e in ProcessType],
+                    index=0,
+                )
+                temperature = st.number_input("温度 (℃)", value=850.0, step=1.0)
+                holding_time = st.number_input("保温时间 (分钟)", value=120.0, step=5.0)
+                cooling_rate = st.number_input("冷却速率 (℃/s)", value=1.5, step=0.1)
+
+            solution = st.text_area("解决方案", height=80)
+            tags_input = st.text_input(
+                "标签（逗号分隔）",
+                value="",
+                placeholder="例如: 紧急, 参考案例, 实验证实",
+            )
+
+            submitted = st.form_submit_button("写入长期记忆", type="primary")
+            if submitted:
+                if not case_id.strip():
+                    st.error("案例 ID 不能为空")
+                    return
+                if not root_cause.strip():
+                    st.error("根因分析不能为空")
+                    return
+                try:
+                    case = CaseRecord(
+                        case_id=case_id.strip(),
+                        defect_type=DefectType(defect_type),
+                        batch_params=BatchParams(
+                            batch_id=batch_id.strip() or "B-MANUAL",
+                            process_type=ProcessType(process_type),
+                            temperature=float(temperature) if temperature else None,
+                            holding_time=float(holding_time) if holding_time else None,
+                            cooling_rate=float(cooling_rate) if cooling_rate else None,
+                            start_time=datetime.now(),
+                        ),
+                        root_cause=root_cause.strip(),
+                        solution=solution.strip(),
+                        confidence=float(confidence),
+                        source="manual",
+                        tags=_parse_tags_input(tags_input),
+                    )
+                    ok = memory.write_semantic(case)
+                    if ok:
+                        st.success(f"案例已写入长期记忆: {case.case_id}")
+                        # 写入后若检测到冲突，提示用户
+                        conflicts = memory.list_conflicts(limit=5)
+                        if conflicts:
+                            st.warning(
+                                f"检测到 {len(conflicts)} 条近期知识冲突，"
+                                f"请到「用户反馈」或 API `/memory/conflicts` 查看"
+                            )
+                        st.rerun()
+                    else:
+                        st.error("写入失败：Chroma 不可用或 ID 已存在")
+                except Exception as e:
+                    st.error(f"写入异常: {e}")
+
+
+def _render_case_table_with_actions(memory: MemoryService, records: list[dict]):
+    """渲染案例表格 + 编辑/删除操作（M3-7 Read/Update/Delete）"""
+    if not records:
+        st.info("暂无长期记忆案例。可在上方「新增案例」表单录入。")
+        return
+
+    # 过滤器
+    fcol1, fcol2 = st.columns(2)
+    with fcol1:
+        defect_types = sorted({
+            (r.get("metadata") or {}).get("defect_type", "")
+            for r in records
+            if (r.get("metadata") or {}).get("defect_type")
+        })
+        selected = st.selectbox(
+            "按缺陷类型过滤",
+            options=["全部"] + defect_types,
+            key="case_mgmt_filter_type",
+        )
+    with fcol2:
+        kw = st.text_input("按 ID/根因/方案搜索", value="", key="case_mgmt_search")
+
+    filtered = records
+    if selected != "全部":
+        filtered = [
+            r for r in filtered
+            if (r.get("metadata") or {}).get("defect_type") == selected
+        ]
+    if kw:
+        kw_lower = kw.lower()
+        filtered = [
+            r for r in filtered
+            if kw_lower in (r.get("id", "") or "").lower()
+            or kw_lower in (r.get("document", "") or "").lower()
+        ]
+
+    st.write(f"**案例列表**（{len(filtered)}/{len(records)} 条）")
+    st.dataframe(
+        [
+            {
+                "案例ID": r.get("id", ""),
+                "缺陷类型": (r.get("metadata") or {}).get("defect_type", ""),
+                "置信度": _fmt_confidence((r.get("metadata") or {}).get("confidence")),
+                "标签": (r.get("metadata") or {}).get("tags", ""),
+                "根因": ((r.get("document", "") or "").split("\n", 2)[1:2] or [""])[0][:60],
+                "创建时间": _fmt_datetime((r.get("metadata") or {}).get("created_at")),
+            }
+            for r in filtered
+        ],
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.divider()
+    st.write("**编辑 / 删除案例**")
+    case_ids = [r.get("id", "") for r in filtered if r.get("id")]
+    if not case_ids:
+        st.info("当前过滤条件下无可操作案例")
+        return
+
+    selected_id = st.selectbox("选择案例 ID", options=case_ids, key="case_mgmt_select")
+    if not selected_id:
+        return
+
+    # 拉取最新数据（避免使用缓存）
+    detail = memory.get_semantic_case(selected_id)
+    if detail is None:
+        st.warning(f"案例 {selected_id} 已不存在（可能已被删除）")
+        return
+
+    meta = detail.get("metadata") or {}
+    doc = detail.get("document") or ""
+    parts = doc.split("\n", 2)
+    old_root = parts[1] if len(parts) > 1 else ""
+    old_solution = parts[2] if len(parts) > 2 else ""
+    old_tags_str = meta.get("tags", "")
+    old_confidence = float(meta.get("confidence", 0.5))
+
+    with st.form("case_edit_form"):
+        new_root = st.text_area("根因分析", value=old_root, height=80, key="case_edit_root")
+        new_solution = st.text_area(
+            "解决方案", value=old_solution, height=80, key="case_edit_solution"
+        )
+        new_confidence = st.slider(
+            "置信度", 0.0, 1.0, old_confidence, 0.05, key="case_edit_conf"
+        )
+        new_tags = st.text_input(
+            "标签（逗号分隔；清空则删除全部标签）",
+            value=old_tags_str,
+            key="case_edit_tags",
+        )
+        ec1, ec2 = st.columns(2)
+        with ec1:
+            save_clicked = st.form_submit_button("💾 保存修改", type="primary")
+        with ec2:
+            delete_clicked = st.form_submit_button("🗑 删除案例")
+
+    if save_clicked:
+        tags_list = _parse_tags_input(new_tags)
+        ok = memory.update_semantic(
+            case_id=selected_id,
+            root_cause=new_root.strip() if new_root.strip() != old_root else None,
+            solution=new_solution.strip() if new_solution.strip() != old_solution else None,
+            confidence=float(new_confidence) if abs(new_confidence - old_confidence) > 1e-6 else None,
+            tags=tags_list if new_tags != old_tags_str else None,
+        )
+        if ok:
+            st.success(f"案例 {selected_id} 已更新")
+            st.rerun()
+        else:
+            st.error("更新失败（Chroma 不可用或案例不存在）")
+
+    if delete_clicked:
+        # 二次确认
+        st.session_state["case_delete_confirm"] = selected_id
+        st.warning(f"确认要删除案例 {selected_id} 吗？此操作不可撤销。")
+
+    if st.session_state.get("case_delete_confirm") == selected_id:
+        cc1, cc2 = st.columns(2)
+        with cc1:
+            if st.button("✅ 确认删除", key="case_delete_yes"):
+                ok = memory.delete_semantic(selected_id)
+                if ok:
+                    st.success(f"案例 {selected_id} 已删除")
+                    st.session_state["case_delete_confirm"] = None
+                    st.rerun()
+                else:
+                    st.error("删除失败（Chroma 不可用）")
+        with cc2:
+            if st.button("❌ 取消", key="case_delete_no"):
+                st.session_state["case_delete_confirm"] = None
+                st.rerun()
+
+
+def _render_case_management(memory: MemoryService):
+    """渲染案例库管理界面（M3-7 主入口：CRUD + 标签）"""
+    st.write("**M3-7 案例库管理**：新增、编辑、删除长期记忆案例，支持标签管理。")
+
+    # 检测 Chroma 是否可用
+    if memory._collection is None:
+        memory._ensure_chroma()
+    if memory._collection is None:
+        st.error(
+            "Chroma 不可用，无法管理长期记忆。请检查 `data/chroma/` 目录或 Chroma 依赖。"
+        )
+        return
+
+    # 新增案例表单
+    _render_case_create_form(memory)
+
+    st.divider()
+
+    # 案例列表 + 编辑/删除
+    try:
+        records = memory.list_all_semantic(limit=500)
+    except Exception as e:
+        st.error(f"加载案例列表失败: {e}")
+        return
+
+    _render_case_table_with_actions(memory, records)
+
+
+def render_memory_browser():
+    """渲染记忆浏览界面（M3-12 / M3-7 主入口）
+
+    五个 Tab：概览 / 短期记忆 / 长期记忆 / 用户反馈 / 案例管理
     直连 MemoryService，无需启动 API 服务器。
     """
     st.subheader("🧠 记忆浏览")
-    st.caption("展示 Agent 当前\"记得\"什么（短期记忆 / 长期记忆 / 用户反馈）")
+    st.caption("展示 Agent 当前\"记得\"什么（短期记忆 / 长期记忆 / 用户反馈 / 案例管理）")
 
     try:
         memory = _get_memory_service()
@@ -287,8 +551,10 @@ def render_memory_browser():
         st.error(f"初始化记忆服务失败: {e}")
         return
 
-    # 四个 Tab
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 概览", "📝 短期记忆", "💾 长期记忆", "💬 用户反馈"])
+    # 五个 Tab
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(
+        ["📊 概览", "📝 短期记忆", "💾 长期记忆", "💬 用户反馈", "🔧 案例管理"]
+    )
 
     with tab1:
         try:
@@ -317,3 +583,9 @@ def render_memory_browser():
             _render_feedback_table(records)
         except Exception as e:
             st.error(f"加载用户反馈失败: {e}")
+
+    with tab5:
+        try:
+            _render_case_management(memory)
+        except Exception as e:
+            st.error(f"加载案例管理失败: {e}")
