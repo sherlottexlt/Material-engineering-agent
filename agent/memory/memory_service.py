@@ -7,6 +7,8 @@ MetaCraft Agent 三层记忆管理
 - 短期记忆（Episodic）：SQLite，近 30 天批次与归因
 - 长期记忆（Semantic）：Chroma 向量库，工艺手册 + 历史案例
 """
+import json
+import os
 import sqlite3
 import uuid
 from dataclasses import dataclass
@@ -58,6 +60,8 @@ class MemoryService:
         chroma_path: str | Path | None = None,
         chroma_collection: str = "metacraft_cases",
         retention_days: int = 30,
+        chroma_host: str | None = None,
+        chroma_port: int = 8000,
     ):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -65,6 +69,10 @@ class MemoryService:
         self.collection_name = chroma_collection
         self.chroma_path = Path(chroma_path) if chroma_path else DEFAULT_CHROMA_PATH
         self.chroma_path.mkdir(parents=True, exist_ok=True)
+        # M3-1: 支持连接 Docker 部署的 Chroma 服务端（HTTP 模式）
+        # 优先级：显式参数 > 环境变量 CHROMA_HOST > None（降级为嵌入式 PersistentClient）
+        self.chroma_host = chroma_host or os.environ.get("CHROMA_HOST")
+        self.chroma_port = int(os.environ.get("CHROMA_PORT", chroma_port))
 
         # 初始化 SQLite
         self.db = sqlite3.connect(str(self.db_path))
@@ -113,15 +121,32 @@ class MemoryService:
         self.db.commit()
 
     def _ensure_chroma(self):
-        """初始化 Chroma 客户端（PersistentClient，数据持久化到磁盘）"""
+        """初始化 Chroma 客户端
+
+        M3-1: 支持两种模式
+        - HTTP 模式：chroma_host 存在时连接 Docker 部署的 Chroma 服务端
+        - 嵌入式模式：否则用 PersistentClient，数据持久化到本地磁盘
+        """
         if self._collection is None:
             try:
                 import chromadb
-                self._chroma_client = chromadb.PersistentClient(path=str(self.chroma_path))
+                if self.chroma_host:
+                    # M3-1: HTTP 模式连接 Docker 部署的 Chroma 服务端
+                    self._chroma_client = chromadb.HttpClient(
+                        host=self.chroma_host, port=self.chroma_port
+                    )
+                    logger.info(
+                        f"Chroma HTTP 客户端已连接: {self.chroma_host}:{self.chroma_port}"
+                    )
+                else:
+                    # 嵌入式模式
+                    self._chroma_client = chromadb.PersistentClient(
+                        path=str(self.chroma_path)
+                    )
+                    logger.info(f"Chroma 嵌入式集合已就绪: {self.collection_name} @ {self.chroma_path}")
                 self._collection = self._chroma_client.get_or_create_collection(
                     self.collection_name
                 )
-                logger.info(f"Chroma 集合已就绪: {self.collection_name} @ {self.chroma_path}")
             except Exception as e:
                 logger.warning(f"Chroma 未就绪（降级模式）: {e}")
                 self._collection = None
@@ -369,6 +394,147 @@ class MemoryService:
         except Exception as e:
             logger.error(f"更新置信度失败: {e}")
             return False
+
+    # ===== M3-10: 反馈驱动批量权重更新 =====
+
+    def aggregate_feedback_update(
+        self,
+        case_id: str,
+        days: int = 90,
+    ) -> dict:
+        """聚合多条反馈更新案例置信度（M3-10）
+
+        查询该案例相关的所有反馈，按时间衰减加权平均后更新 confidence。
+        多条反馈比单条更可信，反馈聚合分占 50%，旧 confidence 占 50%。
+
+        时间衰减：weight = max(0.1, 1 - age_days / days)
+        （超过 days 天的反馈权重降至 0.1，不再继续下降）
+
+        Args:
+            case_id: 案例ID（用作 proposal_id 查询反馈）
+            days: 衰减周期（天），默认 90
+
+        Returns:
+            {"feedback_count": N, "old_confidence": x, "new_confidence": y, "updated": bool}
+        """
+        # 1. 查询关联反馈（proposal_id = case_id）
+        feedbacks = self.query_feedback(proposal_id=case_id, days=days * 2)
+        if not feedbacks:
+            return {
+                "feedback_count": 0,
+                "old_confidence": None,
+                "new_confidence": None,
+                "updated": False,
+            }
+
+        # 2. 时间衰减加权平均
+        now = datetime.now()
+        total_weight = 0.0
+        weighted_sum = 0.0
+        for fb in feedbacks:
+            created = fb.get("created_at")
+            if isinstance(created, datetime):
+                age_days = (now - created).days
+            else:
+                age_days = 0
+            weight = max(0.1, 1 - age_days / days)
+            score = fb.get("score", 0.5)
+            if score is None:
+                score = 0.5
+            weighted_sum += score * weight
+            total_weight += weight
+
+        aggregated_score = weighted_sum / total_weight if total_weight > 0 else 0.5
+
+        # 3. 更新 confidence
+        self._ensure_chroma()
+        if self._collection is None:
+            return {
+                "feedback_count": len(feedbacks),
+                "old_confidence": None,
+                "new_confidence": None,
+                "updated": False,
+            }
+
+        try:
+            existing = self._collection.get(ids=[case_id], include=["metadatas"])
+            if not existing["metadatas"]:
+                return {
+                    "feedback_count": len(feedbacks),
+                    "old_confidence": None,
+                    "new_confidence": None,
+                    "updated": False,
+                }
+
+            metadata = existing["metadatas"][0]
+            old_conf = metadata.get("confidence", 0.5)
+            # 多条反馈聚合：反馈分占 50%，旧 confidence 占 50%
+            new_conf = old_conf * 0.5 + aggregated_score * 0.5
+            metadata["confidence"] = new_conf
+
+            self._collection.update(ids=[case_id], metadatas=[metadata])
+            logger.info(
+                f"案例 {case_id} 聚合置信度更新: {old_conf:.3f} → {new_conf:.3f} "
+                f"({len(feedbacks)} 条反馈, 聚合分 {aggregated_score:.3f})"
+            )
+            return {
+                "feedback_count": len(feedbacks),
+                "old_confidence": old_conf,
+                "new_confidence": new_conf,
+                "updated": True,
+            }
+        except Exception as e:
+            logger.error(f"聚合反馈更新失败: {e}")
+            return {
+                "feedback_count": len(feedbacks),
+                "old_confidence": None,
+                "new_confidence": None,
+                "updated": False,
+            }
+
+    def batch_update_confidence_from_feedback(self, days: int = 30) -> dict:
+        """批量处理近期反馈，更新所有有反馈的案例 confidence（M3-10）
+
+        Args:
+            days: 查询近 N 天的反馈
+
+        Returns:
+            {"processed_cases": N, "total_feedback": N, "updated": N, "skipped": N}
+        """
+        feedbacks = self.query_feedback(days=days)
+        if not feedbacks:
+            return {
+                "processed_cases": 0,
+                "total_feedback": 0,
+                "updated": 0,
+                "skipped": 0,
+            }
+
+        # 按 proposal_id 分组（去重）
+        case_ids = set(
+            fb["proposal_id"] for fb in feedbacks
+            if fb.get("proposal_id")
+        )
+
+        updated = 0
+        skipped = 0
+        for case_id in case_ids:
+            result = self.aggregate_feedback_update(case_id, days=days * 3)
+            if result["updated"]:
+                updated += 1
+            else:
+                skipped += 1
+
+        logger.info(
+            f"批量置信度更新: {len(case_ids)} 个案例, "
+            f"{updated} 成功, {skipped} 跳过"
+        )
+        return {
+            "processed_cases": len(case_ids),
+            "total_feedback": len(feedbacks),
+            "updated": updated,
+            "skipped": skipped,
+        }
 
     # ===== 列表查询（M3-12 记忆可视化）=====
 
@@ -842,6 +1008,194 @@ class MemoryService:
         if deleted > 0:
             logger.info(f"清理过期低质记忆: {deleted} 条")
         return deleted
+
+    # ===== M3-13: 遗忘机制扩展 =====
+
+    def cleanup_all(self, also_cleanup_feedback: bool = False) -> dict:
+        """清理过期的短期记忆 + 可选清理反馈（M3-13）
+
+        清理条件：
+        - episodic: 超过 retention_days 且 quality_score < 0.3
+        - feedback: 超过 retention_days * 2（可选）
+
+        Args:
+            also_cleanup_feedback: 是否同时清理过期反馈
+
+        Returns:
+            {"episodic_deleted": N, "feedback_deleted": N}
+        """
+        episodic_deleted = self.cleanup_expired()
+
+        feedback_deleted = 0
+        if also_cleanup_feedback:
+            fb_cutoff = datetime.now() - timedelta(days=self.retention_days * 2)
+            cur = self.db.execute(
+                "DELETE FROM feedback WHERE created_at < ?",
+                (fb_cutoff,),
+            )
+            self.db.commit()
+            feedback_deleted = cur.rowcount
+
+        if feedback_deleted > 0:
+            logger.info(f"清理过期反馈: {feedback_deleted} 条")
+
+        return {
+            "episodic_deleted": episodic_deleted,
+            "feedback_deleted": feedback_deleted,
+        }
+
+    def archive_low_quality_semantic(
+        self,
+        min_confidence: float = 0.3,
+        min_age_days: int = 90,
+        archive_path: str | Path | None = None,
+    ) -> dict:
+        """归档低质长期记忆（M3-13 遗忘机制）
+
+        将置信度低于阈值且超过最小存储时间的案例从 Chroma 移出到归档文件。
+        归档而非直接删除，保留可追溯性。
+
+        多维度评估：
+        1. 置信度 < min_confidence（低质）
+        2. 存储时间 > min_age_days（陈旧）
+        两个条件同时满足才归档。
+
+        Args:
+            min_confidence: 置信度阈值（低于此值考虑归档）
+            min_age_days: 最小存储天数（超过此值才考虑归档）
+            archive_path: 归档文件路径（默认 data/archived_cases.json）
+
+        Returns:
+            {"archived": N, "remaining": N, "archive_total": N}
+        """
+        self._ensure_chroma()
+        if self._collection is None:
+            return {"archived": 0, "remaining": 0, "archive_total": 0}
+
+        # 1. 获取全部案例
+        all_cases = self.list_all_semantic(limit=10000)
+        if not all_cases:
+            return {"archived": 0, "remaining": 0, "archive_total": 0}
+
+        # 2. 筛选待归档案例（低质 + 陈旧）
+        now = datetime.now()
+        cutoff = now - timedelta(days=min_age_days)
+        to_archive = []
+        keep_count = 0
+
+        for case in all_cases:
+            meta = case.get("metadata", {})
+            confidence = meta.get("confidence", 0.5)
+            created_at_str = meta.get("created_at", "")
+
+            try:
+                created_at = datetime.fromisoformat(created_at_str) if created_at_str else now
+            except Exception:
+                created_at = now
+
+            if confidence < min_confidence and created_at < cutoff:
+                to_archive.append(case)
+            else:
+                keep_count += 1
+
+        if not to_archive:
+            logger.info("无低质陈旧案例需归档")
+            return {
+                "archived": 0,
+                "remaining": len(all_cases),
+                "archive_total": self._count_archived(archive_path),
+            }
+
+        # 3. 写入归档文件
+        if archive_path is None:
+            archive_path = self.db_path.parent / "archived_cases.json"
+        archive_path = Path(archive_path)
+        archive_path.parent.mkdir(parents=True, exist_ok=True)
+
+        existing_archive = []
+        if archive_path.exists():
+            try:
+                existing_archive = json.loads(archive_path.read_text(encoding="utf-8"))
+            except Exception:
+                existing_archive = []
+
+        for case in to_archive:
+            existing_archive.append({
+                "id": case["id"],
+                "document": case.get("document", ""),
+                "metadata": case.get("metadata", {}),
+                "archived_at": now.isoformat(),
+            })
+
+        archive_path.write_text(
+            json.dumps(existing_archive, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+        # 4. 从 Chroma 删除
+        archive_ids = [c["id"] for c in to_archive]
+        self._collection.delete(ids=archive_ids)
+
+        logger.info(
+            f"归档低质案例: {len(to_archive)} 条, 剩余 {keep_count} 条, "
+            f"归档总计 {len(existing_archive)} 条"
+        )
+
+        return {
+            "archived": len(to_archive),
+            "remaining": keep_count,
+            "archive_total": len(existing_archive),
+        }
+
+    def _count_archived(self, archive_path: str | Path | None = None) -> int:
+        """统计已归档案例数"""
+        if archive_path is None:
+            archive_path = self.db_path.parent / "archived_cases.json"
+        archive_path = Path(archive_path)
+        if not archive_path.exists():
+            return 0
+        try:
+            return len(json.loads(archive_path.read_text(encoding="utf-8")))
+        except Exception:
+            return 0
+
+    def get_archive_stats(self, archive_path: str | Path | None = None) -> dict:
+        """获取归档统计（M3-13）
+
+        Args:
+            archive_path: 归档文件路径
+
+        Returns:
+            {"total": N, "by_defect_type": {type: count}, "avg_confidence": float}
+        """
+        if archive_path is None:
+            archive_path = self.db_path.parent / "archived_cases.json"
+        archive_path = Path(archive_path)
+        if not archive_path.exists():
+            return {"total": 0, "by_defect_type": {}, "avg_confidence": 0.0}
+
+        try:
+            archived = json.loads(archive_path.read_text(encoding="utf-8"))
+        except Exception:
+            return {"total": 0, "by_defect_type": {}, "avg_confidence": 0.0}
+
+        by_defect_type: dict[str, int] = {}
+        confidences = []
+        for case in archived:
+            meta = case.get("metadata", {})
+            dtype = meta.get("defect_type", "unknown")
+            by_defect_type[dtype] = by_defect_type.get(dtype, 0) + 1
+            conf = meta.get("confidence", 0.5)
+            if conf is not None:
+                confidences.append(conf)
+
+        avg_conf = sum(confidences) / len(confidences) if confidences else 0.0
+
+        return {
+            "total": len(archived),
+            "by_defect_type": by_defect_type,
+            "avg_confidence": avg_conf,
+        }
 
     def close(self):
         """关闭连接"""

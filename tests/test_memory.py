@@ -991,6 +991,301 @@ class TestCaseCRUD:
         assert memory.get_semantic_case("C_CRUD") is None
 
 
+# ===== M3-10: 反馈驱动权重更新测试 =====
+
+
+class TestAggregateFeedbackUpdate:
+    """M3-10: 反馈聚合置信度更新测试"""
+
+    def test_no_feedback_returns_not_updated(self, memory_with_chroma):
+        """无反馈时返回 updated=False"""
+        memory = memory_with_chroma
+        memory.write_semantic(_make_case(case_id="C_NO_FB", confidence=0.5))
+        result = memory.aggregate_feedback_update("C_NO_FB")
+        assert result["updated"] is False
+        assert result["feedback_count"] == 0
+
+    def test_single_feedback_updates_confidence(self, memory_with_chroma):
+        """单条反馈应更新置信度"""
+        memory = memory_with_chroma
+        memory.write_semantic(_make_case(case_id="C_SINGLE", confidence=0.5))
+        memory.write_feedback("fb_1", "C_SINGLE", "u1", "adopted", 0.9)
+
+        result = memory.aggregate_feedback_update("C_SINGLE")
+        assert result["updated"] is True
+        assert result["feedback_count"] == 1
+        assert abs(result["old_confidence"] - 0.5) < 0.01
+        # new_conf = 0.5 * 0.5 + 0.9 * 0.5 = 0.7
+        assert abs(result["new_confidence"] - 0.7) < 0.01
+
+        # 验证已持久化
+        case = memory.get_semantic_case("C_SINGLE")
+        assert abs(case["metadata"]["confidence"] - 0.7) < 0.01
+
+    def test_multiple_feedbacks_aggregated(self, memory_with_chroma):
+        """多条反馈应聚合加权"""
+        memory = memory_with_chroma
+        memory.write_semantic(_make_case(case_id="C_MULTI", confidence=0.5))
+        memory.write_feedback("fb_1", "C_MULTI", "u1", "adopted", 0.9)
+        memory.write_feedback("fb_2", "C_MULTI", "u2", "rejected", 0.1)
+
+        result = memory.aggregate_feedback_update("C_MULTI")
+        assert result["updated"] is True
+        assert result["feedback_count"] == 2
+        # 两条都是新反馈（weight=1.0），aggregated = (0.9+0.1)/2 = 0.5
+        # new_conf = 0.5*0.5 + 0.5*0.5 = 0.5
+        assert abs(result["new_confidence"] - 0.5) < 0.01
+
+    def test_time_decay_weighting(self, memory_with_chroma):
+        """旧反馈权重应降低，新反馈占主导"""
+        memory = memory_with_chroma
+        memory.write_semantic(_make_case(case_id="C_DECAY", confidence=0.5))
+        # 旧反馈（90天前，score=0.1）
+        memory.write_feedback("fb_old", "C_DECAY", "u1", "rejected", 0.1)
+        memory.db.execute(
+            "UPDATE feedback SET created_at = ? WHERE feedback_id = ?",
+            (datetime.now() - timedelta(days=90), "fb_old"),
+        )
+        memory.db.commit()
+        # 新反馈（score=0.9）
+        memory.write_feedback("fb_new", "C_DECAY", "u2", "adopted", 0.9)
+
+        result = memory.aggregate_feedback_update("C_DECAY", days=90)
+        assert result["updated"] is True
+        # 旧反馈 weight=0.1，新反馈 weight=1.0
+        # aggregated ≈ 0.827，new_conf ≈ 0.664
+        assert result["new_confidence"] > 0.6  # 新反馈占主导
+
+    def test_nonexistent_case_not_updated(self, memory_with_chroma):
+        """案例不存在时返回 updated=False"""
+        memory = memory_with_chroma
+        memory.write_feedback("fb_1", "C_GHOST", "u1", "adopted", 0.9)
+        result = memory.aggregate_feedback_update("C_GHOST")
+        assert result["updated"] is False
+        assert result["feedback_count"] == 1
+
+    def test_without_chroma_not_updated(self, memory):
+        """无 Chroma 时返回 updated=False"""
+        memory.write_feedback("fb_1", "C001", "u1", "adopted", 0.9)
+        result = memory.aggregate_feedback_update("C001")
+        assert result["updated"] is False
+
+
+class TestBatchUpdateConfidence:
+    """M3-10: 批量反馈置信度更新测试"""
+
+    def test_batch_update_multiple_cases(self, memory_with_chroma):
+        """批量更新多个案例"""
+        memory = memory_with_chroma
+        memory.write_semantic(_make_case(case_id="C_B1", confidence=0.5))
+        memory.write_semantic(_make_case(case_id="C_B2", confidence=0.5))
+        memory.write_feedback("fb_1", "C_B1", "u1", "adopted", 0.9)
+        memory.write_feedback("fb_2", "C_B2", "u2", "rejected", 0.1)
+        memory.write_feedback("fb_3", "C_B1", "u3", "adopted", 0.8)
+
+        result = memory.batch_update_confidence_from_feedback(days=30)
+        assert result["processed_cases"] == 2
+        assert result["total_feedback"] == 3
+        assert result["updated"] == 2
+        assert result["skipped"] == 0
+
+    def test_batch_no_feedback(self, memory_with_chroma):
+        """无反馈时返回空统计"""
+        result = memory_with_chroma.batch_update_confidence_from_feedback(days=30)
+        assert result["processed_cases"] == 0
+        assert result["total_feedback"] == 0
+        assert result["updated"] == 0
+
+
+# ===== M3-13: 遗忘机制扩展测试 =====
+
+
+class TestCleanupAll:
+    """M3-13: 扩展清理测试"""
+
+    def test_default_no_feedback_cleanup(self, memory):
+        """默认不清理反馈"""
+        memory.write_episodic("B001", "hardness_low", "原因", "方案")
+        memory.write_feedback("fb_1", "P001", "u1", "adopted", 0.9)
+
+        # 让短期记忆过期低质
+        memory.db.execute(
+            "UPDATE episodic SET created_at = ?, quality_score = 0.1 WHERE batch_id = ?",
+            (datetime.now() - timedelta(days=40), "B001"),
+        )
+        memory.db.commit()
+
+        result = memory.cleanup_all()
+        assert result["episodic_deleted"] == 1
+        assert result["feedback_deleted"] == 0
+        # 反馈仍在
+        assert len(memory.query_feedback(days=30)) == 1
+
+    def test_cleanup_with_feedback(self, memory):
+        """also_cleanup_feedback=True 清理过期反馈"""
+        memory.write_feedback("fb_old", "P001", "u1", "adopted", 0.9)
+        memory.write_feedback("fb_new", "P002", "u2", "rejected", 0.1)
+
+        # fb_old 过期（retention_days*2 = 60 天）
+        memory.db.execute(
+            "UPDATE feedback SET created_at = ? WHERE feedback_id = ?",
+            (datetime.now() - timedelta(days=70), "fb_old"),
+        )
+        memory.db.commit()
+
+        result = memory.cleanup_all(also_cleanup_feedback=True)
+        assert result["feedback_deleted"] == 1
+        # fb_new 仍在
+        remaining = memory.query_feedback(days=100)
+        assert len(remaining) == 1
+        assert remaining[0]["feedback_id"] == "fb_new"
+
+
+class TestArchiveLowQuality:
+    """M3-13: 低质长期记忆归档测试"""
+
+    def test_archive_low_quality_old_cases(self, memory_with_chroma, tmp_path):
+        """应归档低质且陈旧的案例"""
+        memory = memory_with_chroma
+        archive_file = tmp_path / "archive.json"
+
+        # 低质陈旧案例（应归档）
+        memory.write_semantic(_make_case(
+            case_id="C_OLD_LOW", confidence=0.1,
+            created_at=datetime.now() - timedelta(days=100),
+        ))
+        # 高质量案例（应保留）
+        memory.write_semantic(_make_case(
+            case_id="C_GOOD", confidence=0.9,
+            created_at=datetime.now() - timedelta(days=100),
+        ))
+        # 低质但新（应保留）
+        memory.write_semantic(_make_case(case_id="C_NEW_LOW", confidence=0.1))
+
+        result = memory.archive_low_quality_semantic(
+            min_confidence=0.3, min_age_days=90, archive_path=archive_file,
+        )
+
+        assert result["archived"] == 1
+        assert result["remaining"] == 2
+        assert result["archive_total"] == 1
+        # 低质陈旧案例已移除
+        assert memory.get_semantic_case("C_OLD_LOW") is None
+        assert memory.get_semantic_case("C_GOOD") is not None
+        assert memory.get_semantic_case("C_NEW_LOW") is not None
+
+        # 验证归档文件内容
+        import json
+        archived = json.loads(archive_file.read_text(encoding="utf-8"))
+        assert len(archived) == 1
+        assert archived[0]["id"] == "C_OLD_LOW"
+        assert "archived_at" in archived[0]
+
+    def test_archive_keeps_high_quality(self, memory_with_chroma, tmp_path):
+        """高质量案例不应被归档"""
+        memory = memory_with_chroma
+        memory.write_semantic(_make_case(
+            case_id="C_OLD_GOOD", confidence=0.9,
+            created_at=datetime.now() - timedelta(days=100),
+        ))
+
+        result = memory.archive_low_quality_semantic(
+            min_confidence=0.3, min_age_days=90,
+            archive_path=tmp_path / "archive.json",
+        )
+
+        assert result["archived"] == 0
+        assert result["remaining"] == 1
+        assert memory.get_semantic_case("C_OLD_GOOD") is not None
+
+    def test_archive_keeps_new_low_quality(self, memory_with_chroma, tmp_path):
+        """低质但新的案例不应被归档"""
+        memory = memory_with_chroma
+        memory.write_semantic(_make_case(case_id="C_NEW_LOW", confidence=0.1))
+
+        result = memory.archive_low_quality_semantic(
+            min_confidence=0.3, min_age_days=90,
+            archive_path=tmp_path / "archive.json",
+        )
+
+        assert result["archived"] == 0
+        assert memory.get_semantic_case("C_NEW_LOW") is not None
+
+    def test_archive_accumulates(self, memory_with_chroma, tmp_path):
+        """多次归档应累积到同一文件"""
+        memory = memory_with_chroma
+        archive_file = tmp_path / "archive.json"
+
+        # 第一次归档
+        memory.write_semantic(_make_case(
+            case_id="C_A1", confidence=0.1,
+            created_at=datetime.now() - timedelta(days=100),
+        ))
+        memory.archive_low_quality_semantic(
+            min_confidence=0.3, min_age_days=90, archive_path=archive_file,
+        )
+
+        # 第二次归档
+        memory.write_semantic(_make_case(
+            case_id="C_A2", confidence=0.1,
+            created_at=datetime.now() - timedelta(days=100),
+        ))
+        result = memory.archive_low_quality_semantic(
+            min_confidence=0.3, min_age_days=90, archive_path=archive_file,
+        )
+
+        assert result["archived"] == 1
+        assert result["archive_total"] == 2
+
+    def test_archive_without_chroma(self, memory, tmp_path):
+        """无 Chroma 时返回空统计"""
+        result = memory.archive_low_quality_semantic(
+            archive_path=tmp_path / "archive.json",
+        )
+        assert result["archived"] == 0
+        assert result["remaining"] == 0
+        assert result["archive_total"] == 0
+
+    def test_archive_empty_library(self, memory_with_chroma, tmp_path):
+        """空库归档返回 0"""
+        result = memory_with_chroma.archive_low_quality_semantic(
+            archive_path=tmp_path / "archive.json",
+        )
+        assert result["archived"] == 0
+        assert result["remaining"] == 0
+
+
+class TestArchiveStats:
+    """M3-13: 归档统计测试"""
+
+    def test_stats_empty_archive(self, memory, tmp_path):
+        """空归档文件返回零统计"""
+        result = memory.get_archive_stats(archive_path=tmp_path / "nonexistent.json")
+        assert result["total"] == 0
+        assert result["by_defect_type"] == {}
+        assert result["avg_confidence"] == 0.0
+
+    def test_stats_with_archived_cases(self, memory_with_chroma, tmp_path):
+        """应正确统计归档案例"""
+        memory = memory_with_chroma
+        archive_file = tmp_path / "archive.json"
+
+        for i in range(3):
+            memory.write_semantic(_make_case(
+                case_id=f"C_ARC_{i}", confidence=0.1,
+                created_at=datetime.now() - timedelta(days=100),
+            ))
+
+        memory.archive_low_quality_semantic(
+            min_confidence=0.3, min_age_days=90, archive_path=archive_file,
+        )
+
+        stats = memory.get_archive_stats(archive_path=archive_file)
+        assert stats["total"] == 3
+        assert stats["by_defect_type"].get("hardness_low") == 3
+        assert stats["avg_confidence"] < 0.3  # 都是低质
+
+
 class _RecordingMemoryService:
     """记录写入调用的 MemoryService 替身，用于隔离测试"""
 

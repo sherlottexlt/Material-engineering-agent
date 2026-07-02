@@ -8,6 +8,9 @@ services:
     ports:
       - "8000:8000"
     env_file: .env
+    environment:
+      - CHROMA_HOST=chroma
+      - CHROMA_PORT=8000
     volumes:
       - ./data:/app/data
       - ./config:/app/config
@@ -24,6 +27,9 @@ services:
     ports:
       - "8501:8501"
     env_file: .env
+    environment:
+      - CHROMA_HOST=chroma
+      - CHROMA_PORT=8000
     volumes:
       - ./data:/app/data
     depends_on:
@@ -87,6 +93,9 @@ services:
     container_name: metacraft-mcp-knowledge
     command: python mcp_servers/knowledge_server.py
     env_file: .env
+    environment:
+      - CHROMA_HOST=chroma
+      - CHROMA_PORT=8000
     depends_on:
       - chroma
     restart: unless-stopped
