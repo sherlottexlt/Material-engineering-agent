@@ -1,0 +1,74 @@
+{
+  "test_time": "2026-07-03T02:54:15.796184",
+  "sla_target": 0.995,
+  "summary": {
+    "normal_requests": 100,
+    "degraded_requests": 30,
+    "error_requests": 0,
+    "total_requests": 130
+  },
+  "sla_status": {
+    "total_requests": 130,
+    "availability": 1.0,
+    "error_rate": 0.0,
+    "p95_latency_ms": 2.83,
+    "p99_latency_ms": 37.68,
+    "avg_latency_ms": 70.79,
+    "degraded_count": 30,
+    "sla_target": 0.995,
+    "sla_met": true,
+    "window_minutes": 60
+  },
+  "sla_by_endpoint": {
+    "/health": {
+      "total_requests": 40,
+      "availability": 1.0,
+      "error_rate": 0.0,
+      "p95_latency_ms": 1.09,
+      "avg_latency_ms": 0.38,
+      "degraded_count": 0
+    },
+    "/api/v1/cases": {
+      "total_requests": 30,
+      "availability": 1.0,
+      "error_rate": 0.0,
+      "p95_latency_ms": 7.12,
+      "avg_latency_ms": 3.03,
+      "degraded_count": 10
+    },
+    "/api/v1/dashboard/overview": {
+      "total_requests": 30,
+      "availability": 1.0,
+      "error_rate": 0.0,
+      "p95_latency_ms": 2.67,
+      "avg_latency_ms": 302.64,
+      "degraded_count": 10
+    },
+    "/api/v1/sla/status": {
+      "total_requests": 21,
+      "availability": 1.0,
+      "error_rate": 0.0,
+      "p95_latency_ms": 1.26,
+      "avg_latency_ms": 0.3,
+      "degraded_count": 0
+    },
+    "/api/v1/feedback": {
+      "total_requests": 10,
+      "availability": 1.0,
+      "error_rate": 0.0,
+      "p95_latency_ms": 2.11,
+      "avg_latency_ms": 1.11,
+      "degraded_count": 10
+    }
+  },
+  "verification": {
+    "availability": 1.0,
+    "availability_pct": "100.00%",
+    "sla_target_pct": "99.5%",
+    "sla_met": true,
+    "degraded_count": 30,
+    "p95_latency_ms": 2.83,
+    "p99_latency_ms": 37.68
+  },
+  "acceptance": "✅ 达标"
+}

@@ -10,6 +10,7 @@ MetaCraft Agent REST API
 - WS   /api/v1/stream      实时推送执行过程
 """
 import json
+import time
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -22,6 +23,7 @@ from pydantic import BaseModel
 
 from agent.memory.memory_service import MemoryService
 from agent.orchestrator import build_orchestrator
+from agent.sla import sla_monitor
 from agent.utils import (
     can_access_line,
     get_user_permissions,
@@ -56,6 +58,22 @@ app.add_middleware(
 )
 
 
+# M4-15: 统一降级响应 helper（设置 X-Degraded header 供 SLA 中间件统计）
+def _degraded_response(content: dict, status_code: int = 200) -> JSONResponse:
+    """构造降级响应，标记 X-Degraded header
+
+    Args:
+        content: 响应体（应包含 degraded: True 字段）
+        status_code: HTTP 状态码（200 用于软降级，503 用于硬降级）
+
+    Returns:
+        JSONResponse，带 X-Degraded: true header
+    """
+    resp = JSONResponse(status_code=status_code, content=content)
+    resp.headers["X-Degraded"] = "true"
+    return resp
+
+
 # M4-14: 全局异常处理器（兜底降级，未处理异常返回 503 而非 500）
 # 双重保障：exception_handler + middleware，确保 TestClient 与生产环境都能返回 503
 @app.exception_handler(Exception)
@@ -66,7 +84,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         f"未处理异常降级: path={request.url.path}, trace_id={trace_id}, "
         f"error={exc}"
     )
-    return JSONResponse(
+    return _degraded_response(
         status_code=503,
         content={
             "detail": "服务暂时不可用（降级模式）",
@@ -92,7 +110,7 @@ async def global_exception_middleware(request: Request, call_next):
             f"middleware 降级: path={request.url.path}, trace_id={trace_id}, "
             f"error={exc}"
         )
-        return JSONResponse(
+        return _degraded_response(
             status_code=503,
             content={
                 "detail": "服务暂时不可用（降级模式）",
@@ -101,6 +119,34 @@ async def global_exception_middleware(request: Request, call_next):
                 "error": str(exc)[:200],
                 "degraded": True,
             },
+        )
+
+
+# M4-15: SLA 监控中间件（最外层，最后注册最先执行，记录每个请求的指标）
+@app.middleware("http")
+async def sla_monitoring_middleware(request: Request, call_next):
+    """M4-15: SLA 监控中间件，记录每个请求的响应时间、状态码、降级标记"""
+    start = time.time()
+    status_code = 500
+    degraded = False
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        # 通过响应头 X-Degraded 判断软降级（200+degraded）
+        if response.headers.get("X-Degraded") == "true":
+            degraded = True
+        # 503 硬降级
+        if status_code == 503:
+            degraded = True
+        return response
+    finally:
+        duration_ms = (time.time() - start) * 1000
+        sla_monitor.record(
+            method=request.method,
+            path=request.url.path,
+            status_code=status_code,
+            duration_ms=duration_ms,
+            degraded=degraded,
         )
 
 # 全局 MemoryService
@@ -320,12 +366,12 @@ async def submit_feedback(req: FeedbackRequest):
             "comment": req.comment,
             "line_id": req.line_id,
         })
-        return {
+        return _degraded_response({
             "success": True,
             "feedback_id": feedback_id,
             "degraded": True,
             "message": "反馈已暂存，将在服务恢复后持久化",
-        }
+        })
 
 
 @app.get("/api/v1/cases")
@@ -358,7 +404,9 @@ async def list_cases(
     except Exception as e:
         # M4-14: SQLite 故障降级，返回空结果而非 500
         logger.warning(f"cases 查询降级: {e}")
-        return {"total": 0, "cases": [], "degraded": True, "error": str(e)[:100]}
+        return _degraded_response({
+            "total": 0, "cases": [], "degraded": True, "error": str(e)[:100]
+        })
     return {
         "total": len(records),
         "cases": records[:limit],
@@ -752,7 +800,8 @@ async def dashboard_overview(
     # M4-14: 任一产线降级则顶层 degraded=True
     any_degraded = any(ls.get("degraded") for ls in line_stats_list)
 
-    return {
+    # M4-15: 降级时通过 X-Degraded header 标记，供 SLA 中间件统计
+    result = {
         "user_id": user_id,
         "days": days,
         "lines": line_stats_list,
@@ -765,6 +814,70 @@ async def dashboard_overview(
             "overall_avg_confidence": overall_confidence,
         },
         "degraded": any_degraded,
+    }
+    if any_degraded:
+        return _degraded_response(result)
+    return result
+
+
+# ===== M4-15: SLA 保障端点 =====
+
+@app.get("/api/v1/sla/status")
+async def sla_status(
+    window_minutes: int = Query(60, description="统计窗口（分钟）"),
+):
+    """M4-15: 获取 SLA 状态（可用性、P95/P99 延迟、错误率、降级次数）
+
+    SLA 目标：availability >= 99.5%
+
+    Returns:
+        {
+            "total_requests": int,
+            "availability": float,       # 0.0-1.0
+            "error_rate": float,         # 0.0-1.0
+            "p95_latency_ms": float,
+            "p99_latency_ms": float,
+            "avg_latency_ms": float,
+            "degraded_count": int,
+            "sla_target": 0.995,
+            "sla_met": bool,
+            "window_minutes": int,
+        }
+    """
+    return sla_monitor.get_stats(window_minutes=window_minutes)
+
+
+@app.get("/api/v1/sla/report")
+async def sla_report(
+    window_minutes: int = Query(60, description="统计窗口（分钟）"),
+    user_id: str = Query("admin", description="用户ID（M4-10 权限校验）"),
+):
+    """M4-15: 生成完整 SLA 报告（含按端点细分）
+
+    Returns:
+        {
+            "overall": {...},            # 全局 SLA 统计
+            "by_endpoint": {path: {...}}, # 按端点细分
+            "sla_target": 0.995,
+            "sla_met": bool,
+        }
+    """
+    # M4-10: 仅 admin 可查看完整 SLA 报告
+    perms = get_user_permissions(user_id)
+    if perms["role"] != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail=f"用户 {user_id} 无权查看 SLA 报告（需 admin 角色）",
+        )
+
+    overall = sla_monitor.get_stats(window_minutes=window_minutes)
+    by_endpoint = sla_monitor.get_stats_by_endpoint(window_minutes=window_minutes)
+
+    return {
+        "overall": overall,
+        "by_endpoint": by_endpoint,
+        "sla_target": sla_monitor.SLA_TARGET,
+        "sla_met": overall["sla_met"],
     }
 
 
