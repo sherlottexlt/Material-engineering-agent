@@ -194,6 +194,125 @@ def list_available_lines() -> list[str]:
     ]
 
 
+# ===== M4-10: 多租户权限隔离 =====
+
+
+@lru_cache()
+def load_line_access() -> dict:
+    """加载产线访问权限配置（M4-10 多租户）
+
+    从 config/line_access.yaml 加载用户-产线映射、角色权限矩阵。
+
+    Returns:
+        权限配置 dict，结构：
+        {
+            "default_role": "operator",
+            "roles": {role: {allowed_lines, can_write, can_delete}},
+            "users": {user_id: {role, allowed_lines}}
+        }
+        配置文件不存在时返回空 dict（降级为不鉴权）。
+    """
+    path = CONFIG_DIR / "line_access.yaml"
+    if not path.exists():
+        logger.warning("[M4-10] line_access.yaml 不存在，权限隔离降级为全部放行")
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
+
+
+def get_user_role(user_id: str) -> str:
+    """获取用户角色（M4-10）
+
+    Args:
+        user_id: 用户ID
+
+    Returns:
+        角色名（admin/supervisor/operator），未知用户走 default_role
+    """
+    access = load_line_access()
+    if not access:
+        return "admin"  # 降级模式：无配置则视为 admin
+    users = access.get("users", {})
+    user_cfg = users.get(user_id, {})
+    if "role" in user_cfg:
+        return user_cfg["role"]
+    return access.get("default_role", "operator")
+
+
+def get_user_lines(user_id: str) -> list[str]:
+    """获取用户可访问的产线ID列表（M4-10）
+
+    优先级：
+    1. 用户配置中的 allowed_lines（覆盖角色默认）
+    2. 角色配置中的 allowed_lines
+    3. admin 角色返回 ["*"]（全部产线）
+
+    Args:
+        user_id: 用户ID
+
+    Returns:
+        产线ID列表，如 ["heat_treatment", "welding"]，或 ["*"] 表示全部
+    """
+    access = load_line_access()
+    if not access:
+        return ["*"]  # 降级模式：全部放行
+
+    users = access.get("users", {})
+    user_cfg = users.get(user_id, {})
+    role = user_cfg.get("role", access.get("default_role", "operator"))
+    roles = access.get("roles", {})
+    role_cfg = roles.get(role, {})
+
+    # 用户显式配置优先
+    allowed = user_cfg.get("allowed_lines", role_cfg.get("allowed_lines", []))
+    return allowed if allowed else []
+
+
+def can_access_line(user_id: str, line_id: str) -> bool:
+    """校验用户是否有权访问指定产线（M4-10）
+
+    Args:
+        user_id: 用户ID
+        line_id: 产线ID
+
+    Returns:
+        是否允许访问
+    """
+    allowed = get_user_lines(user_id)
+    if "*" in allowed:
+        return True
+    return line_id in allowed
+
+
+def get_user_permissions(user_id: str) -> dict:
+    """获取用户权限标识（M4-10）
+
+    Args:
+        user_id: 用户ID
+
+    Returns:
+        {"role": str, "can_write": bool, "can_delete": bool, "allowed_lines": list}
+    """
+    access = load_line_access()
+    if not access:
+        return {
+            "role": "admin",
+            "can_write": True,
+            "can_delete": True,
+            "allowed_lines": ["*"],
+        }
+
+    role = get_user_role(user_id)
+    roles = access.get("roles", {})
+    role_cfg = roles.get(role, {})
+    return {
+        "role": role,
+        "can_write": bool(role_cfg.get("can_write", False)),
+        "can_delete": bool(role_cfg.get("can_delete", False)),
+        "allowed_lines": get_user_lines(user_id),
+    }
+
+
 def setup_tracing():
     """配置 LangSmith trace
 

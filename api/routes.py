@@ -14,14 +14,20 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 from pydantic import BaseModel
 
 from agent.memory.memory_service import MemoryService
 from agent.orchestrator import build_orchestrator
-from agent.utils import setup_tracing
+from agent.utils import (
+    can_access_line,
+    get_user_permissions,
+    get_user_lines,
+    list_available_lines,
+    setup_tracing,
+)
 from models.entities import (
     BatchParams,
     CaseRecord,
@@ -55,6 +61,45 @@ memory = MemoryService()
 _results_store: dict[str, dict] = {}
 
 
+# ===== M4-10: 多租户权限校验 =====
+
+
+def _check_line_access(user_id: str, line_id: str, require_write: bool = False) -> None:
+    """校验用户对产线的访问权限（M4-10）
+
+    Args:
+        user_id: 用户ID
+        line_id: 产线ID
+        require_write: 是否需要写权限（POST/PUT/DELETE 端点设 True）
+
+    Raises:
+        HTTPException(403): 无权限时抛出
+    """
+    if not can_access_line(user_id, line_id):
+        raise HTTPException(
+            status_code=403,
+            detail=f"用户 {user_id} 无权访问产线 {line_id}",
+        )
+    if require_write:
+        perms = get_user_permissions(user_id)
+        if not perms["can_write"]:
+            raise HTTPException(
+                status_code=403,
+                detail=f"用户 {user_id} 无写权限（角色: {perms['role']}）",
+            )
+
+
+def _check_delete_access(user_id: str, line_id: str) -> None:
+    """校验删除权限（M4-10）"""
+    _check_line_access(user_id, line_id, require_write=True)
+    perms = get_user_permissions(user_id)
+    if not perms["can_delete"]:
+        raise HTTPException(
+            status_code=403,
+            detail=f"用户 {user_id} 无删除权限（角色: {perms['role']}）",
+        )
+
+
 # ===== 请求/响应模型 =====
 
 class AnalyzeRequest(BaseModel):
@@ -65,6 +110,7 @@ class AnalyzeRequest(BaseModel):
     measured_value: Optional[float] = None
     standard_value: Optional[float] = None
     line_id: str = "heat_treatment"  # M4-9: 产线ID，默认热处理
+    user_id: str = "operator_01"     # M4-10: 提交用户
 
 
 class AnalyzeResponse(BaseModel):
@@ -102,6 +148,9 @@ async def analyze(req: AnalyzeRequest):
     """
     trace_id = f"trace_{uuid.uuid4().hex[:12]}"
     logger.info(f"归因请求: trace_id={trace_id}, batch={req.batch_id}, query={req.query}, line={req.line_id}")
+
+    # M4-10: 权限校验
+    _check_line_access(req.user_id, req.line_id)
 
     # 构造初始状态
     initial_state: AgentState = {
@@ -184,6 +233,9 @@ async def submit_feedback(req: FeedbackRequest):
     """提交用户反馈（持久化到 SQLite）"""
     feedback_id = f"fb_{uuid.uuid4().hex[:8]}"
 
+    # M4-10: 权限校验（反馈需要写权限）
+    _check_line_access(req.user_id, req.line_id, require_write=True)
+
     # 持久化到 SQLite
     saved = memory.write_feedback(
         feedback_id=feedback_id,
@@ -210,14 +262,28 @@ async def submit_feedback(req: FeedbackRequest):
 async def list_cases(
     defect_type: Optional[str] = None,
     line_id: Optional[str] = None,
+    user_id: str = Query("operator_01", description="用户ID（M4-10 权限过滤）"),
     limit: int = 20,
 ):
-    """查询案例库（M4-9: 支持按产线过滤）"""
-    records = memory.query_episodic(
-        defect_type=defect_type,
-        days=365,
-        line_id=line_id,
-    )
+    """查询案例库（M4-9: 支持按产线过滤；M4-10: 权限隔离）"""
+    # M4-10: 权限校验 + 自动过滤
+    user_lines = get_user_lines(user_id)
+    if line_id:
+        _check_line_access(user_id, line_id)
+        target_lines = [line_id]
+    elif "*" in user_lines:
+        target_lines = None  # admin 全部
+    else:
+        target_lines = user_lines  # 仅返回有权限的产线
+
+    records = []
+    if target_lines is None:
+        records = memory.query_episodic(defect_type=defect_type, days=365)
+    else:
+        for lid in target_lines:
+            records.extend(memory.query_episodic(
+                defect_type=defect_type, days=365, line_id=lid
+            ))
     return {
         "total": len(records),
         "cases": records[:limit],
@@ -227,29 +293,57 @@ async def list_cases(
 # ===== M3-12 记忆可视化端点 =====
 
 @app.get("/api/v1/memory/stats")
-async def memory_stats():
+async def memory_stats(
+    user_id: str = Query("operator_01", description="用户ID（M4-10）"),
+):
     """获取记忆统计概览（三层记忆总数 + 分布 + 最近记录）"""
-    return memory.get_memory_stats()
+    # M4-10: 非 admin 用户只统计有权限的产线
+    stats = memory.get_memory_stats()
+    user_lines = get_user_lines(user_id)
+    if "*" not in user_lines:
+        stats["filtered_by_user"] = user_lines
+        stats["user_role"] = get_user_permissions(user_id)["role"]
+    return stats
 
 
 @app.get("/api/v1/memory/episodic")
 async def list_episodic(
     limit: int = 100,
     line_id: Optional[str] = None,
+    user_id: str = Query("operator_01", description="用户ID（M4-10）"),
 ):
-    """列出全部短期记忆（SQLite episodic 表，M4-9: 支持按产线过滤）"""
+    """列出全部短期记忆（SQLite episodic 表，M4-9: 产线过滤；M4-10: 权限隔离）"""
+    user_lines = get_user_lines(user_id)
     if line_id:
-        # M4-9: 按产线过滤走 query_episodic
+        _check_line_access(user_id, line_id)
         records = memory.query_episodic(days=365, line_id=line_id)
-    else:
+    elif "*" in user_lines:
         records = memory.list_all_episodic(limit=limit)
+    else:
+        records = []
+        for lid in user_lines:
+            records.extend(memory.query_episodic(days=365, line_id=lid))
     return {"total": len(records), "records": records}
 
 
 @app.get("/api/v1/memory/semantic")
-async def list_semantic(limit: int = 100):
+async def list_semantic(
+    limit: int = 100,
+    line_id: Optional[str] = None,
+    user_id: str = Query("operator_01", description="用户ID（M4-10）"),
+):
     """列出全部长期记忆（Chroma 案例库）"""
+    # M4-10: 暂不按产线过滤（Chroma 全量返回），admin 可见全部
     records = memory.list_all_semantic(limit=limit)
+    user_lines = get_user_lines(user_id)
+    if "*" not in user_lines and line_id is None:
+        # 非 admin 用户：前端按 metadata.line_id 过滤
+        records = [r for r in records
+                   if (r.get("metadata") or {}).get("line_id") in user_lines]
+    elif line_id:
+        _check_line_access(user_id, line_id)
+        records = [r for r in records
+                   if (r.get("metadata") or {}).get("line_id") == line_id]
     return {"total": len(records), "records": records}
 
 
@@ -257,12 +351,19 @@ async def list_semantic(limit: int = 100):
 async def list_feedback(
     limit: int = 100,
     line_id: Optional[str] = None,
+    user_id: str = Query("operator_01", description="用户ID（M4-10）"),
 ):
-    """列出全部用户反馈（M4-9: 支持按产线过滤）"""
+    """列出全部用户反馈（M4-9: 产线过滤；M4-10: 权限隔离）"""
+    user_lines = get_user_lines(user_id)
     if line_id:
+        _check_line_access(user_id, line_id)
         records = memory.query_feedback(days=365, line_id=line_id)
-    else:
+    elif "*" in user_lines:
         records = memory.list_all_feedback(limit=limit)
+    else:
+        records = []
+        for lid in user_lines:
+            records.extend(memory.query_feedback(days=365, line_id=lid))
     return {"total": len(records), "records": records}
 
 
@@ -272,9 +373,19 @@ async def list_feedback(
 async def list_conflicts(
     limit: int = 100,
     line_id: Optional[str] = None,
+    user_id: str = Query("operator_01", description="用户ID（M4-10）"),
 ):
-    """列出全部知识冲突记录（按时间倒序，M4-9: 支持按产线过滤）"""
-    records = memory.list_conflicts(limit=limit, line_id=line_id)
+    """列出全部知识冲突记录（按时间倒序，M4-9: 产线过滤；M4-10: 权限隔离）"""
+    user_lines = get_user_lines(user_id)
+    if line_id:
+        _check_line_access(user_id, line_id)
+        records = memory.list_conflicts(limit=limit, line_id=line_id)
+    elif "*" in user_lines:
+        records = memory.list_conflicts(limit=limit)
+    else:
+        records = []
+        for lid in user_lines:
+            records.extend(memory.list_conflicts(limit=limit, line_id=lid))
     return {"total": len(records), "records": records}
 
 
@@ -294,6 +405,7 @@ class CaseCreateRequest(BaseModel):
     confidence: float = 0.5
     tags: list[str] = []
     line_id: str = "heat_treatment"  # M4-9: 产线ID
+    user_id: str = "operator_01"     # M4-10: 提交用户
 
 
 class CaseUpdateRequest(BaseModel):
@@ -302,11 +414,15 @@ class CaseUpdateRequest(BaseModel):
     solution: Optional[str] = None
     confidence: Optional[float] = None
     tags: Optional[list[str]] = None  # None=不更新，[]=清空
+    user_id: str = "operator_01"      # M4-10: 操作用户
 
 
 @app.post("/api/v1/memory/cases")
 async def create_case(req: CaseCreateRequest):
     """新增长期记忆案例（M3-7 Create）"""
+    # M4-10: 写权限校验
+    _check_line_access(req.user_id, req.line_id, require_write=True)
+
     case_id = req.case_id or f"case-{uuid.uuid4().hex[:8]}"
     try:
         case = CaseRecord(
@@ -355,17 +471,30 @@ async def create_case(req: CaseCreateRequest):
 
 
 @app.get("/api/v1/memory/cases/{case_id}")
-async def get_case(case_id: str):
+async def get_case(
+    case_id: str,
+    user_id: str = Query("operator_01", description="用户ID（M4-10）"),
+):
     """获取单个案例（M3-7 Read）"""
     record = memory.get_semantic_case(case_id)
     if record is None:
         raise HTTPException(status_code=404, detail=f"案例 {case_id} 不存在")
+    # M4-10: 校验该案例所属产线的访问权限
+    case_line = (record.get("metadata") or {}).get("line_id", "heat_treatment")
+    _check_line_access(user_id, case_line)
     return record
 
 
 @app.put("/api/v1/memory/cases/{case_id}")
 async def update_case(case_id: str, req: CaseUpdateRequest):
     """更新案例字段（M3-7 Update，部分更新）"""
+    # M4-10: 写权限校验（需先查出案例所属产线）
+    existing = memory.get_semantic_case(case_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail=f"案例 {case_id} 不存在")
+    case_line = (existing.get("metadata") or {}).get("line_id", "heat_treatment")
+    _check_line_access(req.user_id, case_line, require_write=True)
+
     ok = memory.update_semantic(
         case_id=case_id,
         root_cause=req.root_cause,
@@ -382,8 +511,18 @@ async def update_case(case_id: str, req: CaseUpdateRequest):
 
 
 @app.delete("/api/v1/memory/cases/{case_id}")
-async def delete_case(case_id: str):
+async def delete_case(
+    case_id: str,
+    user_id: str = Query("operator_01", description="用户ID（M4-10）"),
+):
     """删除案例（M3-7 Delete，同时清理相关冲突记录）"""
+    # M4-10: 删除权限校验（需先查出案例所属产线）
+    existing = memory.get_semantic_case(case_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail=f"案例 {case_id} 不存在")
+    case_line = (existing.get("metadata") or {}).get("line_id", "heat_treatment")
+    _check_delete_access(user_id, case_line)
+
     ok = memory.delete_semantic(case_id)
     if not ok:
         raise HTTPException(
@@ -391,6 +530,147 @@ async def delete_case(case_id: str):
             detail="删除失败：Chroma 不可用",
         )
     return {"case_id": case_id, "deleted": True}
+
+
+# ===== M4-10: 多租户权限查询端点 =====
+
+
+@app.get("/api/v1/auth/permissions")
+async def get_permissions(
+    user_id: str = Query(..., description="用户ID"),
+):
+    """查询用户权限（M4-10）
+
+    返回角色、可访问产线列表、读写权限。
+    前端用于动态渲染产线选择器、隐藏无权限操作。
+    """
+    perms = get_user_permissions(user_id)
+    return {
+        "user_id": user_id,
+        "role": perms["role"],
+        "allowed_lines": perms["allowed_lines"],
+        "can_write": perms["can_write"],
+        "can_delete": perms["can_delete"],
+        "available_lines": list_available_lines(),
+    }
+
+
+@app.get("/api/v1/lines")
+async def list_lines(
+    user_id: str = Query("operator_01", description="用户ID（M4-10）"),
+):
+    """列出用户可访问的产线（M4-10）
+
+    返回产线配置摘要，仅包含用户有权限访问的产线。
+    """
+    from agent.utils import load_line_config
+
+    user_lines = get_user_lines(user_id)
+    all_lines = list_available_lines()
+    # admin 或 ["*"] 返回全部
+    visible = all_lines if "*" in user_lines else [
+        lid for lid in all_lines if lid in user_lines
+    ]
+
+    lines_summary = []
+    for lid in visible:
+        cfg = load_line_config(lid)
+        lines_summary.append({
+            "line_id": lid,
+            "name": cfg.get("name", lid),
+            "process_type": cfg.get("process_type", ""),
+            "material": cfg.get("material", ""),
+            "defect_types": cfg.get("defect_types", []),
+        })
+    return {"total": len(lines_summary), "lines": lines_summary}
+
+
+# ===== M4-11: 跨产线统一看板 =====
+
+
+@app.get("/api/v1/dashboard/overview")
+async def dashboard_overview(
+    user_id: str = Query("operator_01", description="用户ID（M4-10 权限过滤）"),
+    days: int = Query(30, description="统计天数（近 N 天）"),
+):
+    """M4-11: 跨产线汇总看板
+
+    返回各产线 KPI（案例数/缺陷分布/反馈/冲突/置信度/采纳率），
+    非 admin 用户只返回有权限访问的产线数据。
+
+    Returns:
+        {
+            "user_id": str,
+            "days": int,
+            "lines": [
+                {
+                    "line_id": str, "name": str,
+                    "episodic_count": int, "feedback_count": int,
+                    "conflict_count": int, "semantic_count": int,
+                    "defect_distribution": {type: count},
+                    "action_distribution": {action: count},
+                    "adoption_rate": float, "avg_confidence": float,
+                }
+            ],
+            "totals": {
+                "total_episodic": int, "total_feedback": int,
+                "total_conflicts": int, "total_semantic": int,
+                "overall_adoption_rate": float, "overall_avg_confidence": float,
+            }
+        }
+    """
+    from agent.utils import load_line_config
+
+    user_lines = get_user_lines(user_id)
+    all_lines = list_available_lines()
+    visible = all_lines if "*" in user_lines else [
+        lid for lid in all_lines if lid in user_lines
+    ]
+
+    line_stats_list = []
+    total_episodic = 0
+    total_feedback = 0
+    total_conflicts = 0
+    total_semantic = 0
+    total_adopted = 0
+    confidence_sum = 0.0
+    confidence_count = 0
+
+    for lid in visible:
+        cfg = load_line_config(lid)
+        stats = memory.get_line_stats(lid, days=days)
+        stats["name"] = cfg.get("name", lid)
+        line_stats_list.append(stats)
+
+        total_episodic += stats["episodic_count"]
+        total_feedback += stats["feedback_count"]
+        total_conflicts += stats["conflict_count"]
+        total_semantic += stats["semantic_count"]
+        total_adopted += stats["action_distribution"].get("adopted", 0)
+        if stats["semantic_count"] > 0:
+            confidence_sum += stats["avg_confidence"] * stats["semantic_count"]
+            confidence_count += stats["semantic_count"]
+
+    overall_adoption = (
+        round(total_adopted / total_feedback, 3) if total_feedback > 0 else 0.0
+    )
+    overall_confidence = (
+        round(confidence_sum / confidence_count, 3) if confidence_count > 0 else 0.0
+    )
+
+    return {
+        "user_id": user_id,
+        "days": days,
+        "lines": line_stats_list,
+        "totals": {
+            "total_episodic": total_episodic,
+            "total_feedback": total_feedback,
+            "total_conflicts": total_conflicts,
+            "total_semantic": total_semantic,
+            "overall_adoption_rate": overall_adoption,
+            "overall_avg_confidence": overall_confidence,
+        },
+    }
 
 
 @app.websocket("/api/v1/stream")

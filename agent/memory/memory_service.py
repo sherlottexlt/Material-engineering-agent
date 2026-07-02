@@ -713,6 +713,106 @@ class MemoryService:
             "recent_feedback": self.list_all_feedback(limit=5),
         }
 
+    # ===== M4-11: 跨产线看板统计 =====
+
+    def get_line_stats(self, line_id: str, days: int = 30) -> dict:
+        """获取单产线统计概览（M4-11 跨产线看板）
+
+        Args:
+            line_id: 产线ID
+            days: 统计天数（近 N 天）
+
+        Returns:
+            {
+                "line_id": str,
+                "episodic_count": int,        # 近 N 天短期记忆数
+                "feedback_count": int,        # 近 N 天反馈数
+                "conflict_count": int,        # 冲突记录数
+                "semantic_count": int,        # 长期记忆案例数
+                "defect_distribution": {type: count},  # 缺陷类型分布
+                "action_distribution": {action: count},  # 反馈动作分布
+                "adoption_rate": float,       # 采纳率（adopted / total）
+                "avg_confidence": float,      # 平均置信度
+            }
+        """
+        since = datetime.now() - timedelta(days=days)
+
+        # 短期记忆统计（按 line_id + 时间过滤）
+        cur = self.db.execute(
+            "SELECT COUNT(*) FROM episodic WHERE line_id = ? AND created_at >= ?",
+            (line_id, since),
+        )
+        episodic_count = cur.fetchone()[0]
+
+        # 缺陷类型分布
+        cur = self.db.execute(
+            "SELECT defect_type, COUNT(*) as cnt FROM episodic "
+            "WHERE line_id = ? AND created_at >= ? AND defect_type IS NOT NULL "
+            "GROUP BY defect_type ORDER BY cnt DESC",
+            (line_id, since),
+        )
+        defect_dist = {row[0]: row[1] for row in cur.fetchall()}
+
+        # 反馈统计
+        cur = self.db.execute(
+            "SELECT COUNT(*) FROM feedback WHERE line_id = ? AND created_at >= ?",
+            (line_id, since),
+        )
+        feedback_count = cur.fetchone()[0]
+
+        # 反馈动作分布
+        cur = self.db.execute(
+            "SELECT action, COUNT(*) as cnt FROM feedback "
+            "WHERE line_id = ? AND created_at >= ? AND action IS NOT NULL "
+            "GROUP BY action ORDER BY cnt DESC",
+            (line_id, since),
+        )
+        action_dist = {row[0]: row[1] for row in cur.fetchall()}
+
+        # 采纳率
+        adopted = action_dist.get("adopted", 0)
+        adoption_rate = round(adopted / feedback_count, 3) if feedback_count > 0 else 0.0
+
+        # 冲突统计
+        cur = self.db.execute(
+            "SELECT COUNT(*) FROM conflicts WHERE line_id = ?",
+            (line_id,),
+        )
+        conflict_count = cur.fetchone()[0]
+
+        # 长期记忆统计（Chroma 全量过滤）
+        semantic_count = 0
+        avg_confidence = 0.0
+        try:
+            semantic_records = self.list_all_semantic(limit=500)
+            line_records = [
+                r for r in semantic_records
+                if (r.get("metadata") or {}).get("line_id") == line_id
+            ]
+            if line_records:
+                semantic_count = len(line_records)
+                confidences = [
+                    r["metadata"].get("confidence", 0.5)
+                    for r in line_records
+                    if isinstance(r.get("metadata"), dict)
+                ]
+                if confidences:
+                    avg_confidence = sum(confidences) / len(confidences)
+        except Exception as e:
+            logger.warning(f"[M4-11] 统计产线 {line_id} 长期记忆失败: {e}")
+
+        return {
+            "line_id": line_id,
+            "episodic_count": episodic_count,
+            "feedback_count": feedback_count,
+            "conflict_count": conflict_count,
+            "semantic_count": semantic_count,
+            "defect_distribution": defect_dist,
+            "action_distribution": action_dist,
+            "adoption_rate": adoption_rate,
+            "avg_confidence": round(avg_confidence, 3),
+        }
+
     # ===== 知识冲突检测（M3-9）=====
 
     def detect_conflicts(self, case: CaseRecord, top_k: int = 10) -> list[ConflictRecord]:

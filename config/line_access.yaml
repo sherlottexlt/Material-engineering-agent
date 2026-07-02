@@ -1,0 +1,41 @@
+# M4-10: 多租户产线访问权限配置
+#
+# 定义用户对产线的访问权限，用于 API 层权限隔离。
+# 角色说明：
+#   - admin: 全产线访问权限（通配符 "*"）
+#   - supervisor: 跨产线监管权限（显式列出可访问产线）
+#   - operator: 单产线操作权限（通常只允许 1 条产线）
+#
+# 通配符 "*" 表示全部产线，仅 admin 角色可用。
+
+# 默认角色权限矩阵（未在 users 中显式配置的用户走 default）
+default_role: operator
+
+roles:
+  admin:
+    allowed_lines: ["*"]        # 全部产线
+    can_write: true              # 可写入案例/反馈
+    can_delete: true             # 可删除案例
+  supervisor:
+    allowed_lines: []            # 需在 users 中显式配置
+    can_write: true
+    can_delete: false
+  operator:
+    allowed_lines: []            # 需在 users 中显式配置
+    can_write: true
+    can_delete: false
+
+# 用户-产线映射（覆盖角色默认值）
+users:
+  admin:
+    role: admin
+    # admin 角色已有 ["*"]，无需重复配置
+  supervisor_01:
+    role: supervisor
+    allowed_lines: [heat_treatment, welding]
+  operator_01:
+    role: operator
+    allowed_lines: [heat_treatment]
+  operator_02:
+    role: operator
+    allowed_lines: [welding]
