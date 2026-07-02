@@ -18,7 +18,12 @@ from datetime import datetime, timedelta
 import pytest
 
 from agent.memory.memory_service import MemoryService
-from agent.nodes.memory_writer import _extract_defect_type, _format_solution
+from agent.nodes.memory_writer import (
+    _extract_defect_type,
+    _extract_root_cause_tags,
+    _assess_confidence,
+    _format_solution,
+)
 from agent.tools import search_cases, _set_memory_service
 from models.entities import CaseRecord, BatchParams, DefectType, ProcessType
 from models.state import AgentState
@@ -90,12 +95,16 @@ class _FakeChromaCollection:
         }
 
     def update(self, ids, metadatas=None, documents=None):
-        """更新 metadata 和/或 document（部分更新）"""
+        """更新 metadata 和/或 document
+
+        注意：Chroma 的 update 是替换整个 metadata/document，不是合并。
+        这与真实 Chroma 行为一致（update_semantic 依赖此语义来移除字段）。
+        """
         for i, doc_id in enumerate(ids):
             if doc_id not in self._store:
                 continue
-            if metadatas is not None and i < len(metadatas) and metadatas[i]:
-                self._store[doc_id]["metadata"].update(metadatas[i])
+            if metadatas is not None and i < len(metadatas):
+                self._store[doc_id]["metadata"] = dict(metadatas[i])
             if documents is not None and i < len(documents):
                 self._store[doc_id]["document"] = documents[i]
 
@@ -434,6 +443,153 @@ class TestFormatSolution:
     def test_string_passthrough(self):
         """字符串应原样返回"""
         assert _format_solution("见最终回答") == "见最终回答"
+
+
+class TestExtractRootCauseTags:
+    """M3-6: 根因标签自动抽取测试"""
+
+    def test_single_root_cause_holding_time(self):
+        """单根因：保温时间不足"""
+        tags = _extract_root_cause_tags("保温时间不足")
+        assert "保温时间不足" in tags
+        assert "holding_time" in tags
+
+    def test_single_root_cause_cooling_rate(self):
+        """单根因：冷却速率过低"""
+        tags = _extract_root_cause_tags("冷却速率过低")
+        assert "冷却速率过低" in tags
+        assert "cooling_rate" in tags
+
+    def test_single_root_cause_temperature(self):
+        """单根因：温度偏低"""
+        tags = _extract_root_cause_tags("温度偏低")
+        assert "温度偏低" in tags
+        assert "temperature" in tags
+
+    def test_multi_root_cause_combo(self):
+        """多根因组合：保温时间不足+冷却速率过低"""
+        tags = _extract_root_cause_tags("保温时间不足+冷却速率过低")
+        assert "保温时间不足" in tags
+        assert "holding_time" in tags
+        assert "冷却速率过低" in tags
+        assert "cooling_rate" in tags
+
+    def test_multi_root_cause_three_way(self):
+        """三根因组合（虽不常见，但应支持）"""
+        tags = _extract_root_cause_tags("保温时间不足+冷却速率过低+温度偏低")
+        assert "保温时间不足" in tags
+        assert "冷却速率过低" in tags
+        assert "温度偏低" in tags
+
+    def test_synonym_time_insufficient(self):
+        """同义词：时间不足 → 保温时间不足"""
+        tags = _extract_root_cause_tags("时间不足")
+        assert "保温时间不足" in tags
+        assert "holding_time" in tags
+
+    def test_synonym_time_not_enough(self):
+        """同义词：时间不够 → 保温时间不足"""
+        tags = _extract_root_cause_tags("时间不够")
+        assert "保温时间不足" in tags
+
+    def test_fullwidth_plus_separator(self):
+        """全角＋分隔符应正常解析"""
+        tags = _extract_root_cause_tags("保温时间不足＋冷却速率过低")
+        assert "保温时间不足" in tags
+        assert "冷却速率过低" in tags
+
+    def test_empty_string(self):
+        """空字符串返回空列表"""
+        assert _extract_root_cause_tags("") == []
+
+    def test_none_input(self):
+        """None 输入返回空列表"""
+        assert _extract_root_cause_tags(None) == []
+
+    def test_unknown_root_cause(self):
+        """未知根因返回空列表"""
+        assert _extract_root_cause_tags("未知原因") == []
+
+    def test_no_duplicates(self):
+        """重复关键词不应产生重复标签"""
+        tags = _extract_root_cause_tags("保温时间不足+保温时间不足")
+        assert tags.count("保温时间不足") == 1
+        assert tags.count("holding_time") == 1
+
+
+class TestAssessConfidence:
+    """M3-6: 置信度自动评估测试"""
+
+    def test_full_signals_high_confidence(self):
+        """全信号齐全应得高置信度（0.9 上限）"""
+        state = {"defect_record": {"defect_type": "hardness_low"}}
+        batch_params = {"temperature": 844, "holding_time": 80, "cooling_rate": 5.7}
+        proposals = [{"root_cause": "保温时间不足"}]
+        confidence = _assess_confidence(state, "保温时间不足", batch_params, proposals)
+        # 0.3 + 0.3(3 参数) + 0.2(根因明确) + 0.1(proposals) + 0.1(defect_record) = 1.0 → 上限 0.9
+        assert confidence == 0.9
+
+    def test_minimal_signals_low_confidence(self):
+        """无任何信号应得基础值 0.3"""
+        state = {}
+        confidence = _assess_confidence(state, "", {}, [])
+        assert confidence == 0.3
+
+    def test_data_completeness(self):
+        """数据完整性：每个参数 +0.1"""
+        state = {}
+        # 1 个参数
+        confidence_1 = _assess_confidence(state, "", {"temperature": 844}, [])
+        assert confidence_1 == 0.4  # 0.3 + 0.1
+        # 2 个参数
+        confidence_2 = _assess_confidence(
+            state, "", {"temperature": 844, "holding_time": 80}, []
+        )
+        assert confidence_2 == 0.5  # 0.3 + 0.2
+        # 3 个参数
+        confidence_3 = _assess_confidence(
+            state, "", {"temperature": 844, "holding_time": 80, "cooling_rate": 5.7}, []
+        )
+        assert confidence_3 == 0.6  # 0.3 + 0.3
+
+    def test_root_cause_explicitness(self):
+        """根因明确性：含标准关键词 +0.2"""
+        state = {}
+        batch_params = {}
+        confidence = _assess_confidence(state, "保温时间不足", batch_params, [])
+        assert confidence == 0.5  # 0.3 + 0.2
+
+    def test_root_cause_unknown(self):
+        """未知根因不加分"""
+        state = {}
+        confidence = _assess_confidence(state, "未知原因", {}, [])
+        assert confidence == 0.3
+
+    def test_proposals_existence(self):
+        """有 proposals +0.1"""
+        state = {}
+        confidence = _assess_confidence(state, "", {}, [{"root_cause": "x"}])
+        assert confidence == 0.4  # 0.3 + 0.1
+
+    def test_defect_record_existence(self):
+        """有 defect_record +0.1"""
+        state = {"defect_record": {"defect_type": "hardness_low"}}
+        confidence = _assess_confidence(state, "", {}, [])
+        assert confidence == 0.4  # 0.3 + 0.1
+
+    def test_capped_at_0_9(self):
+        """置信度上限 0.9"""
+        state = {"defect_record": {"defect_type": "hardness_low"}}
+        batch_params = {"temperature": 844, "holding_time": 80, "cooling_rate": 5.7}
+        proposals = [{"root_cause": "保温时间不足"}]
+        confidence = _assess_confidence(state, "保温时间不足", batch_params, proposals)
+        assert confidence <= 0.9
+
+    def test_multi_root_cause_gets_explicitness_bonus(self):
+        """多根因组合也享受明确性加分"""
+        state = {}
+        confidence = _assess_confidence(state, "保温时间不足+冷却速率过低", {}, [])
+        assert confidence == 0.5  # 0.3 + 0.2
 
 
 class TestSearchCasesSemantic:

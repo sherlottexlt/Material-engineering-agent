@@ -241,8 +241,8 @@ class TestRenderMemoryBrowser:
         err_msg = str(_mock_st.error.call_args[0][0])
         assert "DB locked" in err_msg
 
-    def test_renders_four_tabs(self, reset_mock):
-        """正常时渲染 4 个 tab"""
+    def test_renders_five_tabs(self, reset_mock):
+        """正常时渲染 5 个 tab（M3-7 新增案例管理 tab）"""
         mock_memory = MagicMock()
         mock_memory.get_memory_stats.return_value = {}
         mock_memory.list_all_episodic.return_value = []
@@ -252,11 +252,11 @@ class TestRenderMemoryBrowser:
         with patch("ui.memory_browser._get_memory_service", return_value=mock_memory):
             memory_browser.render_memory_browser()
 
-        # 应该调用了 tabs 一次，传入 4 个标签名
+        # 应该调用了 tabs 一次，传入 5 个标签名
         # 注意：_mock_st.tabs 是带 side_effect 的 MagicMock（在 fixture 里设置）
         assert _mock_st.tabs.call_count == 1
         tab_names = _mock_st.tabs.call_args[0][0]
-        assert len(tab_names) == 4
+        assert len(tab_names) == 5
         # 标签名应包含"概览"/"短期记忆"/"长期记忆"/"用户反馈"
         tab_names_str = str(tab_names)
         assert "概览" in tab_names_str

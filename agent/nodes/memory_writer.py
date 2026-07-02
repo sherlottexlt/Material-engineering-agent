@@ -39,6 +39,18 @@ _DEFECT_KEYWORD_MAP = [
     ("相变", DefectType.MICROSTRUCTURE),
 ]
 
+# M3-6: 根因关键词 → 标准化标签（中文根因 + 英文参数名）
+# 支持 6 类根因（3 单根因 + 3 双根因组合），与 prompts.yaml 标准一致
+_ROOT_CAUSE_TAG_MAP = [
+    ("保温时间不足", ["保温时间不足", "holding_time"]),
+    ("时间不够", ["保温时间不足", "holding_time"]),
+    ("时间不足", ["保温时间不足", "holding_time"]),
+    ("冷却速率过低", ["冷却速率过低", "cooling_rate"]),
+    ("冷却不足", ["冷却速率过低", "cooling_rate"]),
+    ("温度偏低", ["温度偏低", "temperature"]),
+    ("温度不足", ["温度偏低", "temperature"]),
+]
+
 
 def _extract_defect_type(state: AgentState, root_cause: str) -> DefectType:
     """从状态多个信号中抽取缺陷类型
@@ -91,6 +103,85 @@ def _extract_defect_type(state: AgentState, root_cause: str) -> DefectType:
     return DefectType.HARDNESS_LOW
 
 
+def _extract_root_cause_tags(root_cause: str) -> list[str]:
+    """M3-6: 从根因文本抽取标准化标签
+
+    支持多根因组合（"+" 分隔），与 prompts.yaml 标准根因命名一致。
+    用于自动生成案例 tags，提升后续检索精度。
+
+    Args:
+        root_cause: 根因文本（如 "保温时间不足+冷却速率过低"）
+
+    Returns:
+        去重排序的标签列表（如 ["holding_time", "保温时间不足",
+        "cooling_rate", "冷却速率过低"]）
+    """
+    if not root_cause:
+        return []
+
+    tags: set[str] = set()
+    text = str(root_cause).replace("＋", "+")
+    # 按 + 分割多根因组合（如 "保温时间不足+冷却速率过低"）
+    parts = [p.strip() for p in text.split("+")]
+
+    for part in parts:
+        for pattern, labels in _ROOT_CAUSE_TAG_MAP:
+            if pattern in part:
+                tags.update(labels)
+                break
+
+    return sorted(tags)
+
+
+def _assess_confidence(
+    state: AgentState,
+    root_cause: str,
+    batch_params: dict,
+    proposals: list,
+) -> float:
+    """M3-6: 基于多信号评估案例初始置信度
+
+    评估维度（累计加分，上限 0.9）：
+    1. 基础值 0.3
+    2. 数据完整性：每个关键工艺参数 +0.1（最多 +0.3）
+    3. 归因明确性：root_cause 含标准根因关键词 +0.2
+    4. 方案存在性：有 proposals（非空）+0.1
+    5. 缺陷记录：有 defect_record +0.1
+
+    Args:
+        state: LangGraph 全局状态
+        root_cause: 根因文本
+        batch_params: 批次工艺参数
+        proposals: 调整建议列表
+
+    Returns:
+        置信度 0.3-0.9
+    """
+    confidence = 0.3  # 基础值
+
+    # 1. 数据完整性（每个关键参数 +0.1，最多 +0.3）
+    for key in ("temperature", "holding_time", "cooling_rate"):
+        if batch_params.get(key) is not None:
+            confidence += 0.1
+
+    # 2. 归因明确性（包含标准根因关键词 +0.2）
+    if root_cause:
+        text = str(root_cause)
+        standard_causes = ("保温时间不足", "冷却速率过低", "温度偏低")
+        if any(cause in text for cause in standard_causes):
+            confidence += 0.2
+
+    # 3. 方案存在性（有 proposals +0.1）
+    if proposals:
+        confidence += 0.1
+
+    # 4. 缺陷记录（有 defect_record +0.1）
+    if state.get("defect_record") is not None:
+        confidence += 0.1
+
+    return min(confidence, 0.9)
+
+
 def _format_solution(solution_raw) -> str:
     """把 adjustments（可能是 dict）格式化为可读字符串"""
     if solution_raw is None or solution_raw == "未知":
@@ -141,13 +232,20 @@ async def memory_writer(state: AgentState) -> dict:
         defect_type = _extract_defect_type(state, str(root_cause))
         logger.info(f"[MemoryWriter] 抽取缺陷类型: {defect_type.value}")
 
+        # M3-6: 自动结构化 — 根因标签 + 置信度评估
+        root_cause_tags = _extract_root_cause_tags(str(root_cause))
+        confidence = _assess_confidence(state, str(root_cause), batch_params, proposals)
+        logger.info(
+            f"[MemoryWriter] 结构化: tags={root_cause_tags}, confidence={confidence:.2f}"
+        )
+
         # 1. 写入短期记忆（情景记忆）
         memory.write_episodic(
             batch_id=batch_id,
             defect_type=defect_type.value,
             root_cause=str(root_cause)[:500],
             solution=str(solution)[:500],
-            quality_score=0.7,  # 默认评分，后续根据用户反馈更新
+            quality_score=confidence,  # M3-6: 用评估值替代写死的 0.7
         )
         logger.info(f"[MemoryWriter] 短期记忆已写入, batch={batch_id}")
 
@@ -165,10 +263,10 @@ async def memory_writer(state: AgentState) -> dict:
             ),
             root_cause=str(root_cause)[:500],
             solution=str(solution)[:500],
-            confidence=0.7,
+            confidence=confidence,  # M3-6: 用评估值替代写死的 0.7
             created_at=datetime.now(),
             source="auto",
-            tags=["auto_generated"],
+            tags=["auto_generated"] + root_cause_tags,  # M3-6: 自动根因标签
         )
 
         success = memory.write_semantic(case)
