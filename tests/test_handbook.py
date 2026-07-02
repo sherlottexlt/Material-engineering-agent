@@ -23,6 +23,10 @@ from ingest_handbooks import (
     _make_chunk,
     build_index,
     chunk_fragments,
+    compute_file_hash,
+    detect_changes,
+    incremental_ingest,
+    ingest_handbooks,
     load_index,
     parse_file,
 )
@@ -118,10 +122,13 @@ class TestBuildIndex:
         (tmp_path / "a.md").write_text("# A\n\n内容A", encoding="utf-8")
         (tmp_path / "b.txt").write_text("内容B", encoding="utf-8")
         index = build_index(tmp_path)
-        assert index["version"] == "1.0"
+        assert index["version"] == "1.1"
         assert set(index["source_files"]) == {"a.md", "b.txt"}
         assert index["total_chunks"] == len(index["chunks"])
         assert index["total_chunks"] > 0
+        # M3-8: 索引应包含 file_hashes
+        assert "file_hashes" in index
+        assert set(index["file_hashes"].keys()) == {"a.md", "b.txt"}
 
     def test_build_index_empty_dir(self, tmp_path):
         """空目录应返回空字典"""
@@ -220,3 +227,244 @@ class TestLoadIndex:
         """加载不存在的文件应返回 None"""
         result = load_index(tmp_path / "nope.json")
         assert result is None
+
+
+class TestComputeFileHash:
+    """M3-8: 文件 hash 计算测试"""
+
+    def test_same_content_same_hash(self, tmp_path):
+        """相同内容应产生相同 hash"""
+        f1 = tmp_path / "a.txt"
+        f2 = tmp_path / "b.txt"
+        f1.write_text("内容一致", encoding="utf-8")
+        f2.write_text("内容一致", encoding="utf-8")
+        assert compute_file_hash(f1) == compute_file_hash(f2)
+
+    def test_different_content_different_hash(self, tmp_path):
+        """不同内容应产生不同 hash"""
+        f1 = tmp_path / "a.txt"
+        f2 = tmp_path / "b.txt"
+        f1.write_text("内容A", encoding="utf-8")
+        f2.write_text("内容B", encoding="utf-8")
+        assert compute_file_hash(f1) != compute_file_hash(f2)
+
+    def test_hash_is_hex_string(self, tmp_path):
+        """hash 应为 32 位十六进制字符串"""
+        f = tmp_path / "a.txt"
+        f.write_text("test", encoding="utf-8")
+        h = compute_file_hash(f)
+        assert len(h) == 32
+        assert all(c in "0123456789abcdef" for c in h)
+
+
+class TestDetectChanges:
+    """M3-8: 变更检测测试"""
+
+    def test_detect_added_file(self, tmp_path):
+        """检测新增文件"""
+        (tmp_path / "a.md").write_text("# A\n\n内容A", encoding="utf-8")
+        index = build_index(tmp_path)
+        # 新增 b.md
+        (tmp_path / "b.md").write_text("# B\n\n内容B", encoding="utf-8")
+        changes = detect_changes(tmp_path, index)
+        assert "b.md" in changes["added"]
+        assert "a.md" in changes["unchanged"]
+
+    def test_detect_modified_file(self, tmp_path):
+        """检测修改文件"""
+        (tmp_path / "a.md").write_text("# A\n\n内容A", encoding="utf-8")
+        index = build_index(tmp_path)
+        # 修改 a.md
+        (tmp_path / "a.md").write_text("# A\n\n内容已修改", encoding="utf-8")
+        changes = detect_changes(tmp_path, index)
+        assert "a.md" in changes["modified"]
+
+    def test_detect_deleted_file(self, tmp_path):
+        """检测删除文件"""
+        (tmp_path / "a.md").write_text("# A\n\n内容A", encoding="utf-8")
+        (tmp_path / "b.md").write_text("# B\n\n内容B", encoding="utf-8")
+        index = build_index(tmp_path)
+        # 删除 b.md
+        (tmp_path / "b.md").unlink()
+        changes = detect_changes(tmp_path, index)
+        assert "b.md" in changes["deleted"]
+        assert "a.md" in changes["unchanged"]
+
+    def test_detect_no_changes(self, tmp_path):
+        """无变更时全部 unchanged"""
+        (tmp_path / "a.md").write_text("# A\n\n内容A", encoding="utf-8")
+        index = build_index(tmp_path)
+        changes = detect_changes(tmp_path, index)
+        assert changes["added"] == []
+        assert changes["modified"] == []
+        assert changes["deleted"] == []
+        assert "a.md" in changes["unchanged"]
+
+
+class TestIncrementalIngest:
+    """M3-8: 增量导入完整流程测试"""
+
+    @pytest.fixture
+    def isolated_index(self, tmp_path, monkeypatch):
+        """隔离索引路径，避免污染真实 handbook_index.json"""
+        idx_path = tmp_path / "test_index.json"
+        import ingest_handbooks
+        monkeypatch.setattr(ingest_handbooks, "INDEX_PATH", idx_path)
+        # load_index 默认用 INDEX_PATH，但也可以传参
+        # incremental_ingest 内部调用 load_index() 无参数，用模块级 INDEX_PATH
+        return idx_path
+
+    def test_no_existing_index_fallback_full(self, tmp_path, isolated_index):
+        """无旧索引应降级全量导入"""
+        hb_dir = tmp_path / "handbooks"
+        hb_dir.mkdir()
+        (hb_dir / "a.md").write_text("# A\n\n内容A", encoding="utf-8")
+
+        result = incremental_ingest(hb_dir)
+        assert result["added"] == "all"
+        # 索引应已生成
+        assert isolated_index.exists()
+        index = load_index(isolated_index)
+        assert index is not None
+        assert index["total_chunks"] > 0
+
+    def test_no_changes_skips_import(self, tmp_path, isolated_index):
+        """无变更应跳过导入"""
+        hb_dir = tmp_path / "handbooks"
+        hb_dir.mkdir()
+        (hb_dir / "a.md").write_text("# A\n\n内容A", encoding="utf-8")
+
+        # 第一次全量导入
+        incremental_ingest(hb_dir)
+        old_index = load_index(isolated_index)
+        old_created = old_index["created_at"]
+
+        # 第二次增量（无变更）
+        import time
+        time.sleep(0.05)  # 确保 created_at 不同
+        result = incremental_ingest(hb_dir)
+        assert result["added"] == 0
+        assert result["modified"] == 0
+        assert result["deleted"] == 0
+        assert result["unchanged"] == 1
+
+    def test_add_new_file(self, tmp_path, isolated_index):
+        """新增文件：只导入新文件，保留旧 chunks"""
+        hb_dir = tmp_path / "handbooks"
+        hb_dir.mkdir()
+        (hb_dir / "a.md").write_text("# A\n\n内容A", encoding="utf-8")
+        incremental_ingest(hb_dir)
+
+        # 新增 b.md
+        (hb_dir / "b.md").write_text("# B\n\n内容B", encoding="utf-8")
+        result = incremental_ingest(hb_dir)
+        assert result["added"] == 1
+        assert result["unchanged"] == 1
+
+        index = load_index(isolated_index)
+        sources = set(index["source_files"])
+        assert sources == {"a.md", "b.md"}
+        # 两个文件的 chunks 都应存在
+        chunk_sources = {c["source"] for c in index["chunks"]}
+        assert "a.md" in chunk_sources
+        assert "b.md" in chunk_sources
+
+    def test_modify_file(self, tmp_path, isolated_index):
+        """修改文件：重导入该文件，保留其他"""
+        hb_dir = tmp_path / "handbooks"
+        hb_dir.mkdir()
+        (hb_dir / "a.md").write_text("# A\n\n旧内容", encoding="utf-8")
+        (hb_dir / "b.md").write_text("# B\n\n内容B", encoding="utf-8")
+        incremental_ingest(hb_dir)
+        old_b_chunks = [
+            c for c in load_index(isolated_index)["chunks"] if c["source"] == "b.md"
+        ]
+
+        # 修改 a.md
+        (hb_dir / "a.md").write_text("# A\n\n全新内容已修改", encoding="utf-8")
+        result = incremental_ingest(hb_dir)
+        assert result["modified"] == 1
+        assert result["unchanged"] == 1
+
+        index = load_index(isolated_index)
+        new_b_chunks = [c for c in index["chunks"] if c["source"] == "b.md"]
+        # b.md 的 chunks 应保留（内容不变）
+        assert len(new_b_chunks) == len(old_b_chunks)
+        assert new_b_chunks[0]["content"] == old_b_chunks[0]["content"]
+
+    def test_delete_file(self, tmp_path, isolated_index):
+        """删除文件：清理其 chunks"""
+        hb_dir = tmp_path / "handbooks"
+        hb_dir.mkdir()
+        (hb_dir / "a.md").write_text("# A\n\n内容A", encoding="utf-8")
+        (hb_dir / "b.md").write_text("# B\n\n内容B", encoding="utf-8")
+        incremental_ingest(hb_dir)
+
+        # 删除 b.md
+        (hb_dir / "b.md").unlink()
+        result = incremental_ingest(hb_dir)
+        assert result["deleted"] == 1
+        assert result["unchanged"] == 1
+
+        index = load_index(isolated_index)
+        # b.md 的 chunks 应被清理
+        chunk_sources = {c["source"] for c in index["chunks"]}
+        assert "b.md" not in chunk_sources
+        assert "a.md" in chunk_sources
+        # source_files 应不含 b.md
+        assert "b.md" not in index["source_files"]
+
+    def test_mixed_changes(self, tmp_path, isolated_index):
+        """混合变更：同时增+改+删"""
+        hb_dir = tmp_path / "handbooks"
+        hb_dir.mkdir()
+        (hb_dir / "keep.md").write_text("# Keep\n\n保留内容", encoding="utf-8")
+        (hb_dir / "modify.md").write_text("# M\n\n旧内容", encoding="utf-8")
+        (hb_dir / "delete.md").write_text("# D\n\n待删除", encoding="utf-8")
+        incremental_ingest(hb_dir)
+
+        # 混合变更
+        (hb_dir / "add.md").write_text("# Add\n\n新增内容", encoding="utf-8")  # 新增
+        (hb_dir / "modify.md").write_text("# M\n\n修改后内容", encoding="utf-8")  # 修改
+        (hb_dir / "delete.md").unlink()  # 删除
+
+        result = incremental_ingest(hb_dir)
+        assert result["added"] == 1
+        assert result["modified"] == 1
+        assert result["deleted"] == 1
+        assert result["unchanged"] == 1
+
+        index = load_index(isolated_index)
+        sources = set(index["source_files"])
+        assert sources == {"keep.md", "modify.md", "add.md"}
+        assert "delete.md" not in sources
+
+    def test_index_has_file_hashes(self, tmp_path, isolated_index):
+        """增量导入后索引应包含 file_hashes"""
+        hb_dir = tmp_path / "handbooks"
+        hb_dir.mkdir()
+        (hb_dir / "a.md").write_text("# A\n\n内容A", encoding="utf-8")
+        incremental_ingest(hb_dir)
+
+        index = load_index(isolated_index)
+        assert "file_hashes" in index
+        assert "a.md" in index["file_hashes"]
+        assert len(index["file_hashes"]["a.md"]) == 32
+
+    def test_chunk_ids_sequential_after_incremental(self, tmp_path, isolated_index):
+        """增量导入后 chunk_id 应连续编号"""
+        hb_dir = tmp_path / "handbooks"
+        hb_dir.mkdir()
+        (hb_dir / "a.md").write_text("# A\n\n内容A", encoding="utf-8")
+        (hb_dir / "b.md").write_text("# B\n\n内容B", encoding="utf-8")
+        incremental_ingest(hb_dir)
+
+        # 删除 a.md
+        (hb_dir / "a.md").unlink()
+        incremental_ingest(hb_dir)
+
+        index = load_index(isolated_index)
+        chunk_ids = [c["chunk_id"] for c in index["chunks"]]
+        # chunk_id 应从 hb_0000 开始连续
+        for i, cid in enumerate(chunk_ids):
+            assert cid == f"hb_{i:04d}"
