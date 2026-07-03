@@ -75,11 +75,13 @@ class MemoryService:
         self.chroma_port = int(os.environ.get("CHROMA_PORT", chroma_port))
 
         # M4-14: 初始化 SQLite（容错 + WAL 模式提升并发写入；目录创建失败也降级为内存库）
+        # M4-16: 加 busy_timeout=5000ms，写锁冲突时自动等待而非立即失败
         self.db = None
         try:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
-            self.db = sqlite3.connect(str(self.db_path))
+            self.db = sqlite3.connect(str(self.db_path), timeout=5.0, check_same_thread=False)
             self.db.execute("PRAGMA journal_mode=WAL")  # M4-14: WAL 模式
+            self.db.execute("PRAGMA busy_timeout=5000")  # M4-16: 写锁等待 5 秒
             self._init_db()
         except Exception as e:
             logger.error(f"SQLite 初始化失败，降级为内存数据库: {e}")
@@ -159,8 +161,16 @@ class MemoryService:
         M3-1: 支持两种模式
         - HTTP 模式：chroma_host 存在时连接 Docker 部署的 Chroma 服务端
         - 嵌入式模式：否则用 PersistentClient，数据持久化到本地磁盘
+
+        M4-16: 加 _chroma_init_attempted 标志，避免重复初始化导致锁冲突卡死。
+        嵌入式 Chroma 的 PersistentClient 重复创建会因 DuckDB/SQLite 文件锁
+        阻塞，首次失败后不再重试，直接走降级路径。
         """
+        # M4-16: 已尝试过初始化则不再重试（避免锁冲突卡死）
+        if getattr(self, "_chroma_init_attempted", False):
+            return
         if self._collection is None:
+            self._chroma_init_attempted = True
             try:
                 import chromadb
                 if self.chroma_host:
@@ -180,6 +190,8 @@ class MemoryService:
                 self._collection = self._chroma_client.get_or_create_collection(
                     self.collection_name
                 )
+                # 初始化成功，清除标志（允许后续重连）
+                self._chroma_init_attempted = False
             except Exception as e:
                 logger.warning(f"Chroma 未就绪（降级模式）: {e}")
                 self._collection = None
@@ -380,18 +392,31 @@ class MemoryService:
         Returns:
             是否成功
         """
-        try:
-            self.db.execute(
-                "INSERT INTO feedback VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (feedback_id, proposal_id, user_id, action, score,
-                 comment, datetime.now(), line_id),
-            )
-            self.db.commit()
-            logger.info(f"反馈已持久化: {feedback_id}, action={action}, score={score}, line={line_id}")
-            return True
-        except Exception as e:
-            logger.error(f"写入反馈失败: {e}")
-            return False
+        # M4-16: 写锁重试（busy_timeout 之外的显式重试，应对高并发写竞争）
+        import time as _time
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                self.db.execute(
+                    "INSERT INTO feedback VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (feedback_id, proposal_id, user_id, action, score,
+                     comment, datetime.now(), line_id),
+                )
+                self.db.commit()
+                logger.info(f"反馈已持久化: {feedback_id}, action={action}, score={score}, line={line_id}")
+                return True
+            except sqlite3.OperationalError as e:
+                if "locked" in str(e).lower() or "busy" in str(e).lower():
+                    if attempt < max_retries - 1:
+                        _time.sleep(0.1 * (attempt + 1))  # 退避 100ms/200ms
+                        logger.warning(f"feedback 写锁冲突，重试 {attempt+1}/{max_retries}: {e}")
+                        continue
+                logger.error(f"写入反馈失败（重试耗尽）: {e}")
+                return False
+            except Exception as e:
+                logger.error(f"写入反馈失败: {e}")
+                return False
+        return False
 
     def query_feedback(
         self,
@@ -802,24 +827,29 @@ class MemoryService:
         )
         conflict_count = cur.fetchone()[0]
 
-        # 长期记忆统计（Chroma 全量过滤）
+        # M4-16: 长期记忆统计（Chroma 服务端 where 过滤，避免全量拉取）
+        # 旧实现 list_all_semantic(500) 全量拉 documents+metadatas 再 Python 过滤，
+        # 每条产线扫一遍，10 并发下 P95 达 10.7s；改用 where + 只拉 metadatas
         semantic_count = 0
         avg_confidence = 0.0
         try:
-            semantic_records = self.list_all_semantic(limit=500)
-            line_records = [
-                r for r in semantic_records
-                if (r.get("metadata") or {}).get("line_id") == line_id
-            ]
-            if line_records:
-                semantic_count = len(line_records)
-                confidences = [
-                    r["metadata"].get("confidence", 0.5)
-                    for r in line_records
-                    if isinstance(r.get("metadata"), dict)
-                ]
-                if confidences:
-                    avg_confidence = sum(confidences) / len(confidences)
+            self._ensure_chroma()
+            if self._collection is not None:
+                result = self._collection.get(
+                    where={"line_id": line_id},
+                    include=["metadatas"],
+                    limit=10000,
+                )
+                metadatas = result.get("metadatas", [])
+                semantic_count = len(metadatas)
+                if metadatas:
+                    confidences = [
+                        m.get("confidence", 0.5)
+                        for m in metadatas
+                        if isinstance(m, dict)
+                    ]
+                    if confidences:
+                        avg_confidence = sum(confidences) / len(confidences)
         except Exception as e:
             logger.warning(f"[M4-11] 统计产线 {line_id} 长期记忆失败: {e}")
 

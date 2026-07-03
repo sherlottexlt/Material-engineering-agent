@@ -1,5 +1,5 @@
 {
-  "test_time": "2026-07-03T02:56:09.519487",
+  "test_time": "2026-07-03T21:02:01.916880",
   "total": 15,
   "passed": 15,
   "failed": 0,
@@ -9,7 +9,7 @@
       "name": "test_sla_monitor_record_and_stats",
       "description": "SLAMonitor 记录请求并查询统计",
       "status": "PASS",
-      "time_ms": 67.4,
+      "time_ms": 3.0,
       "error": ""
     },
     {
@@ -65,49 +65,49 @@
       "name": "test_sla_status_endpoint",
       "description": "/api/v1/sla/status 端点",
       "status": "PASS",
-      "time_ms": 7909.0,
+      "time_ms": 7400.8,
       "error": ""
     },
     {
       "name": "test_sla_report_endpoint_admin",
       "description": "admin 可访问 /api/v1/sla/report",
       "status": "PASS",
-      "time_ms": 4.6,
+      "time_ms": 7.6,
       "error": ""
     },
     {
       "name": "test_sla_report_permission_denied",
       "description": "非 admin 无权访问 /api/v1/sla/report",
       "status": "PASS",
-      "time_ms": 4.4,
+      "time_ms": 3.0,
       "error": ""
     },
     {
       "name": "test_sla_middleware_records_requests",
       "description": "SLA 中间件自动记录请求",
       "status": "PASS",
-      "time_ms": 3.6,
+      "time_ms": 5.3,
       "error": ""
     },
     {
       "name": "test_sla_middleware_records_degraded",
       "description": "中间件记录降级请求（X-Degraded header）",
       "status": "PASS",
-      "time_ms": 4.7,
+      "time_ms": 4.2,
       "error": ""
     },
     {
       "name": "test_sla_middleware_records_503",
       "description": "中间件记录 503 硬降级",
       "status": "PASS",
-      "time_ms": 3.0,
+      "time_ms": 3.1,
       "error": ""
     },
     {
       "name": "test_sla_99_5_target_met",
       "description": "99.5% 可用性达标验证",
       "status": "PASS",
-      "time_ms": 423.9,
+      "time_ms": 467.9,
       "error": ""
     }
   ]

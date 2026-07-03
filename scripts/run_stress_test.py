@@ -28,17 +28,39 @@ M4-12 压力测试：10 并发用户压测
 """
 import argparse
 import json
+import logging
 import sqlite3
 import statistics
 import sys
 import threading
 import time
+import types
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 
+# M4-16: 抑制日志输出，避免 sandbox 缓冲区溢出
+logging.disable(logging.CRITICAL)
+try:
+    from loguru import logger
+    logger.remove()
+except ImportError:
+    pass
+
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+
+# M4-16: mock langchain_openai 避免 sandbox import 超时（压测不调用 LLM 端点）
+class _FakeChatOpenAI:
+    def __init__(self, **kwargs):
+        self.max_retries = kwargs.get("max_retries", 3)
+    def invoke(self, *a, **kw):
+        return types.SimpleNamespace(content="mock")
+    async def ainvoke(self, *a, **kw):
+        return types.SimpleNamespace(content="mock")
+_fake = types.ModuleType("langchain_openai")
+_fake.ChatOpenAI = _FakeChatOpenAI
+sys.modules["langchain_openai"] = _fake
 
 
 # ===== 压测场景定义 =====
@@ -187,11 +209,14 @@ def run_stress_test(
     from fastapi.testclient import TestClient
     import api.routes
 
-    # M4-12: 替换 SQLite 连接为多线程安全版本（不影响生产代码）
+    # M4-12/M4-16: 替换 SQLite 连接为多线程安全 + WAL + busy_timeout 优化版本
+    # （MemoryService 默认已含这些优化，此处替换确保压测环境一致性）
     api.routes.memory.db.close()
     api.routes.memory.db = sqlite3.connect(
-        str(api.routes.memory.db_path), check_same_thread=False
+        str(api.routes.memory.db_path), timeout=5.0, check_same_thread=False
     )
+    api.routes.memory.db.execute("PRAGMA journal_mode=WAL")
+    api.routes.memory.db.execute("PRAGMA busy_timeout=5000")
 
     app = api.routes.app
     target_endpoints = endpoint_keys or list(ENDPOINTS.keys())
