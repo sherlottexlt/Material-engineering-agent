@@ -142,7 +142,28 @@ class MemoryService:
         """)
         # M4-9: 旧表迁移（已有表无 line_id 列时 ALTER TABLE 补列）
         self._migrate_add_line_id()
+        # M4-16: 创建索引（查询模式：WHERE line_id=? AND created_at>=?）
+        self._create_indexes()
         self.db.commit()
+
+    def _create_indexes(self):
+        """M4-16: 创建查询索引，避免全表扫描
+
+        查询模式分析：
+        - query_episodic: WHERE line_id=? AND created_at>=? [AND defect_type=?]
+        - get_line_stats: WHERE line_id=? AND created_at>=? (episodic/feedback)
+        - get_line_stats: GROUP BY defect_type WHERE line_id=? AND created_at>=?
+        - query_feedback: WHERE line_id=? AND created_at>=?
+        - get_line_stats: WHERE line_id=? (conflicts)
+        """
+        indexes = [
+            "CREATE INDEX IF NOT EXISTS idx_episodic_line_time ON episodic(line_id, created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_episodic_defect ON episodic(defect_type)",
+            "CREATE INDEX IF NOT EXISTS idx_feedback_line_time ON feedback(line_id, created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_conflicts_line ON conflicts(line_id)",
+        ]
+        for sql in indexes:
+            self.db.execute(sql)
 
     def _migrate_add_line_id(self):
         """M4-9: 为旧版表补充 line_id 列（向后兼容）"""
@@ -235,7 +256,7 @@ class MemoryService:
         batch_id: Optional[str] = None,
         defect_type: Optional[str] = None,
         days: int = 30,
-        line_id: Optional[str] = None,
+        line_id: Optional[str | list[str]] = None,
     ) -> list[dict]:
         """查询短期记忆
 
@@ -244,13 +265,15 @@ class MemoryService:
             defect_type: 缺陷类型（可选）
             days: 查询天数
             line_id: 产线ID过滤（可选，M4-9 多产线隔离）
+                M4-16: 支持 str 或 list[str]，list 时用 IN 子句一次查询，
+                避免 N+1（非 admin 多产线循环查询）。
 
         Returns:
             记录列表
         """
         since = datetime.now() - timedelta(days=days)
         query = "SELECT * FROM episodic WHERE created_at >= ?"
-        params = [since]
+        params: list = [since]
 
         if batch_id:
             query += " AND batch_id = ?"
@@ -258,9 +281,16 @@ class MemoryService:
         if defect_type:
             query += " AND defect_type = ?"
             params.append(defect_type)
+        # M4-16: line_id 支持 str 或 list[str]，list 用 IN 子句一次查询
         if line_id:
-            query += " AND line_id = ?"
-            params.append(line_id)
+            if isinstance(line_id, (list, tuple)):
+                # 多产线：用 IN 子句避免 N+1
+                placeholders = ",".join("?" for _ in line_id)
+                query += f" AND line_id IN ({placeholders})"
+                params.extend(line_id)
+            else:
+                query += " AND line_id = ?"
+                params.append(line_id)
 
         query += " ORDER BY created_at DESC"
         cur = self.db.execute(query, params)

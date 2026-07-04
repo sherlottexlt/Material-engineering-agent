@@ -397,10 +397,10 @@ async def list_cases(
         if target_lines is None:
             records = memory.query_episodic(defect_type=defect_type, days=365)
         else:
-            for lid in target_lines:
-                records.extend(memory.query_episodic(
-                    defect_type=defect_type, days=365, line_id=lid
-                ))
+            # M4-16: 单次 IN 查询替代 N+1 循环
+            records = memory.query_episodic(
+                defect_type=defect_type, days=365, line_id=target_lines
+            )
     except Exception as e:
         # M4-14: SQLite 故障降级，返回空结果而非 500
         logger.warning(f"cases 查询降级: {e}")
@@ -443,9 +443,8 @@ async def list_episodic(
     elif "*" in user_lines:
         records = memory.list_all_episodic(limit=limit)
     else:
-        records = []
-        for lid in user_lines:
-            records.extend(memory.query_episodic(days=365, line_id=lid))
+        # M4-16: 单次 IN 查询替代 N+1 循环
+        records = memory.query_episodic(days=365, line_id=user_lines)
     return {"total": len(records), "records": records}
 
 
