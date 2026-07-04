@@ -160,6 +160,10 @@ effect_tracker = EffectTracker(memory)
 from agent.failure_case_collector import FailureCaseCollector
 failure_collector = FailureCaseCollector(memory)
 
+# M5-5: 全局 PromptOptimizer（复用 memory 的 db 连接）
+from agent.prompt_optimizer import PromptOptimizer
+prompt_optimizer = PromptOptimizer(memory)
+
 # 存储已完成的归因结果（M0 用内存存储，M1 切换为 checkpointer）
 _results_store: dict[str, dict] = {}
 
@@ -1262,6 +1266,199 @@ async def update_failure(
         logger.warning(f"failures/{failure_id} 更新降级: {e}")
         return _degraded_response({
             "success": False, "degraded": True, "error": str(e)[:200]
+        })
+
+
+# ===== M5-5: Prompt 自动优化 =====
+
+
+@app.post("/api/v1/prompts/optimize")
+async def optimize_prompts(
+    user_id: str = Query("admin", description="仅 admin 可触发优化"),
+    line_id: Optional[str] = None,
+    days: int = 30,
+    apply: bool = Query(False, description="是否自动应用（默认仅生成 draft，需手动 apply）"),
+):
+    """M5-5: 触发 Prompt 自动优化（分析失败模式 → 生成优化建议）
+
+    流程：
+    1. 从 failure_cases 表分析失败模式
+    2. 基于失败模式生成 Prompt 优化规则（status=draft）
+    3. 若 apply=true，自动应用所有 draft 优化
+    """
+    perms = get_user_permissions(user_id)
+    if perms["role"] != "admin":
+        raise HTTPException(status_code=403, detail="仅 admin 可触发 Prompt 优化")
+    try:
+        # 1. 分析失败模式
+        patterns = prompt_optimizer.analyze_failure_patterns(
+            line_id=line_id, days=days
+        )
+        if not patterns:
+            return {
+                "success": True,
+                "patterns_found": 0,
+                "optimizations_generated": 0,
+                "message": "无失败案例，无需优化",
+            }
+
+        # 2. 生成优化（幂等：已 applied 的不重复生成）
+        generated = []
+        for pattern in patterns:
+            opt = prompt_optimizer.generate_optimization(pattern)
+            if opt:
+                generated.append(opt)
+
+        # 3. 可选自动应用
+        applied = []
+        if apply:
+            for opt in generated:
+                if opt.get("status") == "draft":
+                    result = prompt_optimizer.apply_optimization(opt["optimization_id"])
+                    if result:
+                        applied.append(result["optimization_id"])
+
+        return {
+            "success": True,
+            "patterns_found": len(patterns),
+            "optimizations_generated": len(generated),
+            "optimizations_applied": len(applied),
+            "applied_ids": applied,
+            "optimizations": [
+                {
+                    "optimization_id": o["optimization_id"],
+                    "version": o["version"],
+                    "role": o["role"],
+                    "failure_category": o["failure_category"],
+                    "failure_count": o["failure_count"],
+                    "status": o["status"],
+                    "change_summary": o["change_summary"],
+                }
+                for o in generated
+            ],
+        }
+    except Exception as e:
+        logger.warning(f"prompts/optimize 降级: {e}")
+        return _degraded_response({
+            "success": False, "degraded": True, "error": str(e)[:200]
+        })
+
+
+@app.get("/api/v1/prompts/optimizations")
+async def list_optimizations(
+    role: Optional[str] = None,
+    status: Optional[str] = None,
+    user_id: str = Query("admin", description="仅 admin 可查看优化历史"),
+    limit: int = 100,
+):
+    """M5-5: 列出 Prompt 优化历史"""
+    perms = get_user_permissions(user_id)
+    if perms["role"] != "admin":
+        raise HTTPException(status_code=403, detail="仅 admin 可查看 Prompt 优化历史")
+    try:
+        records = prompt_optimizer.list_optimizations(
+            role=role, status=status, limit=limit
+        )
+        # 列表不返回完整 prompt 文本（太长）
+        for r in records:
+            r.pop("old_prompt", None)
+            r.pop("new_prompt", None)
+        return {"total": len(records), "records": records}
+    except Exception as e:
+        logger.warning(f"prompts/optimizations 降级: {e}")
+        return _degraded_response({
+            "total": 0, "records": [], "degraded": True, "error": str(e)[:100]
+        })
+
+
+@app.get("/api/v1/prompts/optimizations/{optimization_id}")
+async def get_optimization(
+    optimization_id: str,
+    user_id: str = Query("admin", description="仅 admin 可查看"),
+):
+    """M5-5: 查询单条优化记录（含完整 prompt 文本）"""
+    perms = get_user_permissions(user_id)
+    if perms["role"] != "admin":
+        raise HTTPException(status_code=403, detail="仅 admin 可查看")
+    rec = prompt_optimizer.get_optimization(optimization_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"优化记录 {optimization_id} 不存在")
+    return rec
+
+
+@app.post("/api/v1/prompts/apply/{optimization_id}")
+async def apply_optimization(
+    optimization_id: str,
+    user_id: str = Query("admin", description="仅 admin 可应用"),
+):
+    """M5-5: 应用优化（status=draft → applied，备份当前 prompts.yaml）"""
+    perms = get_user_permissions(user_id)
+    if perms["role"] != "admin":
+        raise HTTPException(status_code=403, detail="仅 admin 可应用 Prompt 优化")
+    try:
+        result = prompt_optimizer.apply_optimization(optimization_id)
+        if result is None:
+            return _degraded_response({
+                "success": False, "degraded": True,
+                "error": "应用失败（记录不存在或状态非 draft）"
+            })
+        return {
+            "success": True,
+            "optimization_id": optimization_id,
+            "status": result["status"],
+            "snapshot_path": result.get("snapshot_path"),
+        }
+    except Exception as e:
+        logger.warning(f"prompts/apply 降级: {e}")
+        return _degraded_response({
+            "success": False, "degraded": True, "error": str(e)[:200]
+        })
+
+
+@app.post("/api/v1/prompts/rollback/{optimization_id}")
+async def rollback_optimization(
+    optimization_id: str,
+    user_id: str = Query("admin", description="仅 admin 可回滚"),
+):
+    """M5-5: 回滚优化（status=applied → rolled_back，从快照恢复 prompts.yaml）"""
+    perms = get_user_permissions(user_id)
+    if perms["role"] != "admin":
+        raise HTTPException(status_code=403, detail="仅 admin 可回滚 Prompt 优化")
+    try:
+        result = prompt_optimizer.rollback_optimization(optimization_id)
+        if result is None:
+            return _degraded_response({
+                "success": False, "degraded": True,
+                "error": "回滚失败（记录不存在或状态非 applied）"
+            })
+        return {
+            "success": True,
+            "optimization_id": optimization_id,
+            "status": result["status"],
+        }
+    except Exception as e:
+        logger.warning(f"prompts/rollback 降级: {e}")
+        return _degraded_response({
+            "success": False, "degraded": True, "error": str(e)[:200]
+        })
+
+
+@app.get("/api/v1/prompts/current")
+async def get_current_prompts(
+    role: Optional[str] = None,
+    user_id: str = Query("admin", description="仅 admin 可查看"),
+):
+    """M5-5: 查看当前 prompts"""
+    perms = get_user_permissions(user_id)
+    if perms["role"] != "admin":
+        raise HTTPException(status_code=403, detail="仅 admin 可查看当前 prompts")
+    try:
+        prompts = prompt_optimizer.get_current_prompts(role=role)
+        return {"prompts": prompts, "role_filter": role}
+    except Exception as e:
+        logger.warning(f"prompts/current 降级: {e}")
+        return _degraded_response({
+            "degraded": True, "error": str(e)[:100], "prompts": {}
         })
 
 

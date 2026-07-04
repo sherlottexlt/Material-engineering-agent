@@ -178,6 +178,26 @@ class MemoryService:
                 status TEXT DEFAULT 'open'
             )
         """)
+        # M5-5: Prompt 优化记录表
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS prompt_optimizations (
+                optimization_id TEXT PRIMARY KEY,
+                version INTEGER NOT NULL,
+                role TEXT NOT NULL,
+                failure_category TEXT,
+                failure_count INTEGER DEFAULT 0,
+                trigger_reason TEXT,
+                old_prompt TEXT,
+                new_prompt TEXT,
+                change_summary TEXT,
+                status TEXT DEFAULT 'draft',
+                snapshot_path TEXT,
+                evaluation_result TEXT,
+                created_at TIMESTAMP,
+                applied_at TIMESTAMP,
+                rolled_back_at TIMESTAMP
+            )
+        """)
         # M4-9: 旧表迁移（已有表无 line_id 列时 ALTER TABLE 补列）
         self._migrate_add_line_id()
         # M5-2: 旧表迁移（已有 effect_tracking 表无归因列时 ALTER TABLE 补列）
@@ -210,6 +230,10 @@ class MemoryService:
             "CREATE INDEX IF NOT EXISTS idx_failure_line ON failure_cases(line_id)",
             "CREATE INDEX IF NOT EXISTS idx_failure_category ON failure_cases(category, status)",
             "CREATE INDEX IF NOT EXISTS idx_failure_case ON failure_cases(case_id)",
+            # M5-5: Prompt 优化记录索引
+            "CREATE INDEX IF NOT EXISTS idx_prompt_opt_role ON prompt_optimizations(role, status)",
+            "CREATE INDEX IF NOT EXISTS idx_prompt_opt_status ON prompt_optimizations(status)",
+            "CREATE INDEX IF NOT EXISTS idx_prompt_opt_version ON prompt_optimizations(version)",
         ]
         for sql in indexes:
             self.db.execute(sql)
