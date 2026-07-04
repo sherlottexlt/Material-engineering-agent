@@ -928,6 +928,129 @@ class MemoryService:
             logger.error(f"列出长期记忆失败: {e}")
             return []
 
+    # ===== M5-6: 案例质量评分 =====
+
+    def update_quality_score(self, record_id: str, score: float) -> bool:
+        """更新单个 episodic 记录的质量评分
+
+        Args:
+            record_id: 记录ID
+            score: 质量评分（0.0-1.0）
+
+        Returns:
+            是否更新成功
+        """
+        score = max(0.0, min(1.0, float(score)))
+        cur = self.db.execute(
+            "UPDATE episodic SET quality_score = ? WHERE record_id = ?",
+            (score, record_id),
+        )
+        self.db.commit()
+        return cur.rowcount > 0
+
+    def get_quality_distribution(
+        self,
+        line_id: Optional[str | list[str]] = None,
+        days: int = 30,
+    ) -> dict:
+        """获取案例质量分布统计
+
+        Args:
+            line_id: 产线ID过滤（可选，支持 str 或 list[str]）
+            days: 统计天数
+
+        Returns:
+            {
+                "total": int,
+                "by_tier": {"high": int, "medium": int, "low": int},
+                "avg_score": float,
+                "min_score": float,
+                "max_score": float,
+            }
+        """
+        since = datetime.now() - timedelta(days=days)
+        query = "SELECT quality_score FROM episodic WHERE created_at >= ?"
+        params: list = [since]
+        if line_id:
+            if isinstance(line_id, (list, tuple)):
+                placeholders = ",".join("?" for _ in line_id)
+                query += f" AND line_id IN ({placeholders})"
+                params.extend(line_id)
+            else:
+                query += " AND line_id = ?"
+                params.append(line_id)
+
+        cur = self.db.execute(query, params)
+        scores = [row[0] for row in cur.fetchall()]
+
+        if not scores:
+            return {
+                "total": 0,
+                "by_tier": {"high": 0, "medium": 0, "low": 0},
+                "avg_score": 0.0,
+                "min_score": 0.0,
+                "max_score": 0.0,
+            }
+
+        # 分档：high >= 0.7, medium 0.4-0.7, low < 0.4
+        by_tier = {"high": 0, "medium": 0, "low": 0}
+        for s in scores:
+            if s >= 0.7:
+                by_tier["high"] += 1
+            elif s >= 0.4:
+                by_tier["medium"] += 1
+            else:
+                by_tier["low"] += 1
+
+        return {
+            "total": len(scores),
+            "by_tier": by_tier,
+            "avg_score": round(sum(scores) / len(scores), 4),
+            "min_score": round(min(scores), 4),
+            "max_score": round(max(scores), 4),
+        }
+
+    def get_low_quality_cases(
+        self,
+        line_id: Optional[str | list[str]] = None,
+        threshold: float = 0.4,
+        limit: int = 100,
+    ) -> list[dict]:
+        """获取低质量案例列表（用于 M5-7 主动学习 / cleanup）
+
+        Args:
+            line_id: 产线ID过滤（可选，支持 str 或 list[str]）
+            threshold: 质量分阈值，返回低于此值的案例
+            limit: 最大返回数量
+
+        Returns:
+            案例列表（按 quality_score 升序）
+        """
+        query = (
+            "SELECT * FROM episodic WHERE quality_score < ? "
+            "ORDER BY quality_score ASC LIMIT ?"
+        )
+        params: list = [threshold, limit]
+        if line_id:
+            if isinstance(line_id, (list, tuple)):
+                placeholders = ",".join("?" for _ in line_id)
+                query = (
+                    f"SELECT * FROM episodic WHERE quality_score < ? "
+                    f"AND line_id IN ({placeholders}) "
+                    "ORDER BY quality_score ASC LIMIT ?"
+                )
+                params = [threshold] + list(line_id) + [limit]
+            else:
+                query = (
+                    "SELECT * FROM episodic WHERE quality_score < ? "
+                    "AND line_id = ? ORDER BY quality_score ASC LIMIT ?"
+                )
+                params = [threshold, line_id, limit]
+
+        cur = self.db.execute(query, params)
+        columns = [d[0] for d in cur.description]
+        return [dict(zip(columns, row)) for row in cur.fetchall()]
+
     def get_memory_stats(self) -> dict:
         """获取记忆统计概览
 

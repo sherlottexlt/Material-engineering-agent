@@ -164,6 +164,10 @@ failure_collector = FailureCaseCollector(memory)
 from agent.prompt_optimizer import PromptOptimizer
 prompt_optimizer = PromptOptimizer(memory)
 
+# M5-6: 全局 CaseQualityScorer（复用 memory 的 db 连接）
+from agent.case_quality_scorer import CaseQualityScorer
+quality_scorer = CaseQualityScorer(memory)
+
 # 存储已完成的归因结果（M0 用内存存储，M1 切换为 checkpointer）
 _results_store: dict[str, dict] = {}
 
@@ -1459,6 +1463,167 @@ async def get_current_prompts(
         logger.warning(f"prompts/current 降级: {e}")
         return _degraded_response({
             "degraded": True, "error": str(e)[:100], "prompts": {}
+        })
+
+
+# ===== M5-6: 案例质量评分端点 =====
+
+@app.post("/api/v1/cases/quality/score")
+async def score_cases_quality(
+    user_id: str = Query("admin", description="触发评分的用户"),
+    line_id: Optional[str] = None,
+    days: int = Query(365, description="评分范围（最近 N 天的案例）"),
+    limit: int = Query(1000, description="最大处理数量"),
+    dry_run: bool = Query(False, description="仅评分不写入数据库"),
+):
+    """M5-6: 批量评分案例质量并更新 quality_score 字段
+
+    评分维度（4 维加权）：
+    - 信息完整度 (40%): root_cause/solution 是否非空 + 长度
+    - 可复用性   (25%): defect_type 标准化 + solution 可操作
+    - 时效性     (15%): 案例新鲜度
+    - 验证状态   (20%): failure_cases 出现过则减分
+    """
+    perms = get_user_permissions(user_id)
+    if perms["role"] != "admin":
+        raise HTTPException(status_code=403, detail="仅 admin 可触发质量评分")
+    try:
+        result = quality_scorer.score_all(
+            line_id=line_id, days=days, limit=limit, dry_run=dry_run
+        )
+        return {
+            "success": True,
+            "dry_run": dry_run,
+            **result,
+        }
+    except Exception as e:
+        logger.warning(f"cases/quality/score 降级: {e}")
+        return _degraded_response({
+            "success": False, "degraded": True, "error": str(e)[:200]
+        })
+
+
+@app.get("/api/v1/cases/quality/stats")
+async def get_quality_stats(
+    user_id: str = Query("operator_01"),
+    line_id: Optional[str] = None,
+    days: int = Query(30, description="统计天数"),
+):
+    """M5-6: 获取案例质量分布统计
+
+    返回：{total, by_tier: {high, medium, low}, avg_score, min_score, max_score}
+    """
+    try:
+        # 非 admin 用户只能查看自己有权限的产线
+        if line_id:
+            _check_line_access(user_id, line_id)
+            target_lines: Optional[str | list[str]] = line_id
+        else:
+            perms = get_user_permissions(user_id)
+            if perms["role"] == "admin":
+                target_lines = None  # admin 看全部
+            else:
+                user_lines = get_user_lines(user_id)
+                if not user_lines:
+                    return {
+                        "success": True,
+                        "stats": {
+                            "total": 0,
+                            "by_tier": {"high": 0, "medium": 0, "low": 0},
+                            "avg_score": 0.0, "min_score": 0.0, "max_score": 0.0,
+                        },
+                    }
+                target_lines = user_lines
+
+        stats = quality_scorer.get_quality_stats(line_id=target_lines, days=days)
+        return {"success": True, "stats": stats}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"cases/quality/stats 降级: {e}")
+        return _degraded_response({
+            "success": False, "degraded": True, "error": str(e)[:200]
+        })
+
+
+@app.get("/api/v1/cases/quality/low")
+async def get_low_quality_cases(
+    user_id: str = Query("admin"),
+    line_id: Optional[str] = None,
+    threshold: float = Query(0.4, description="质量分阈值，返回低于此值的案例"),
+    limit: int = Query(100, description="最大返回数量"),
+):
+    """M5-6: 获取低质量案例列表（用于 M5-7 主动学习 / cleanup）
+
+    返回按 quality_score 升序排列的案例列表。
+    """
+    try:
+        # 非 admin 用户只能查看自己有权限的产线
+        if line_id:
+            _check_line_access(user_id, line_id)
+            target_lines: Optional[str | list[str]] = line_id
+        else:
+            perms = get_user_permissions(user_id)
+            if perms["role"] == "admin":
+                target_lines = None
+            else:
+                user_lines = get_user_lines(user_id)
+                if not user_lines:
+                    return {"success": True, "cases": []}
+                target_lines = user_lines
+
+        cases = quality_scorer.get_low_quality_cases(
+            line_id=target_lines, threshold=threshold, limit=limit
+        )
+        return {
+            "success": True,
+            "threshold": threshold,
+            "count": len(cases),
+            "cases": cases,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"cases/quality/low 降级: {e}")
+        return _degraded_response({
+            "success": False, "degraded": True, "error": str(e)[:200]
+        })
+
+
+@app.get("/api/v1/cases/{record_id}/quality")
+async def get_case_quality_detail(
+    record_id: str,
+    user_id: str = Query("admin"),
+):
+    """M5-6: 查询单个案例的评分详情（含 4 维子分和评分依据）
+
+    返回：{record_id, old_score, new_score, dimensions, reasons}
+    注意：此端点不写入数据库，仅返回当前评分（基于 episodic 表当前数据）。
+    """
+    try:
+        # 直接从 episodic 表查询记录
+        cur = memory.db.execute(
+            "SELECT * FROM episodic WHERE record_id = ?",
+            (record_id,),
+        )
+        columns = [d[0] for d in cur.description]
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"案例 {record_id} 不存在")
+        record = dict(zip(columns, row))
+
+        # 产线权限校验
+        record_line = record.get("line_id", "heat_treatment")
+        _check_line_access(user_id, record_line)
+
+        result = quality_scorer.score_case(record)
+        return {"success": True, "quality": result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"cases/{{record_id}}/quality 降级: {e}")
+        return _degraded_response({
+            "success": False, "degraded": True, "error": str(e)[:200]
         })
 
 
