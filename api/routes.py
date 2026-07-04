@@ -152,6 +152,10 @@ async def sla_monitoring_middleware(request: Request, call_next):
 # 全局 MemoryService
 memory = MemoryService()
 
+# M5-1: 全局 EffectTracker（复用 memory 的 db 连接）
+from agent.effect_tracker import EffectTracker
+effect_tracker = EffectTracker(memory)
+
 # 存储已完成的归因结果（M0 用内存存储，M1 切换为 checkpointer）
 _results_store: dict[str, dict] = {}
 
@@ -875,6 +879,157 @@ async def sla_report(
         "sla_target": sla_monitor.SLA_TARGET,
         "sla_met": overall["sla_met"],
     }
+
+
+# ===== M5-1 调参效果跟踪端点 =====
+
+class EffectScheduleRequest(BaseModel):
+    """M5-1: 创建效果跟踪请求"""
+    proposal_id: str
+    case_id: str
+    batch_id_before: str
+    line_id: str = "heat_treatment"
+    metric_before: Optional[float] = None  # 调参前缺陷率（0-1）
+    days_offset: int = 7  # T+N 天后跟踪
+    note: Optional[str] = None
+    user_id: str = "operator_01"
+
+
+@app.post("/api/v1/effect/track")
+async def schedule_effect_tracking(req: EffectScheduleRequest):
+    """M5-1: 调度调参效果跟踪（Agent 产出建议后调用）"""
+    _check_line_access(req.user_id, req.line_id, require_write=True)
+    try:
+        tracking_id = effect_tracker.schedule_tracking(
+            proposal_id=req.proposal_id,
+            case_id=req.case_id,
+            batch_id_before=req.batch_id_before,
+            line_id=req.line_id,
+            metric_before=req.metric_before,
+            days_offset=req.days_offset,
+            note=req.note,
+        )
+        return {"success": True, "tracking_id": tracking_id, "status": "pending"}
+    except Exception as e:
+        logger.warning(f"effect/track 降级: {e}")
+        return _degraded_response({
+            "success": False, "degraded": True, "error": str(e)[:200]
+        })
+
+
+@app.get("/api/v1/effect")
+async def list_effect_trackings(
+    status: Optional[str] = None,
+    line_id: Optional[str] = None,
+    user_id: str = Query("operator_01", description="用户ID（M4-10 权限过滤）"),
+    days: int = 30,
+    limit: int = 100,
+):
+    """M5-1: 列出效果跟踪记录（按产线权限过滤）"""
+    user_lines = get_user_lines(user_id)
+    if line_id:
+        _check_line_access(user_id, line_id)
+        target = line_id
+    elif "*" in user_lines:
+        target = None  # admin 全部
+    else:
+        target = user_lines  # M5-1: 多产线 IN 查询
+
+    try:
+        records = effect_tracker.list_trackings(
+            line_id=target, status=status, days=days, limit=limit
+        )
+        return {"total": len(records), "records": records}
+    except Exception as e:
+        logger.warning(f"effect 列表降级: {e}")
+        return _degraded_response({
+            "total": 0, "records": [], "degraded": True, "error": str(e)[:100]
+        })
+
+
+@app.get("/api/v1/effect/stats")
+async def effect_stats(
+    line_id: Optional[str] = None,
+    user_id: str = Query("operator_01", description="用户ID（M4-10）"),
+    days: int = 30,
+):
+    """M5-1: 效果跟踪统计概览"""
+    user_lines = get_user_lines(user_id)
+    if line_id:
+        _check_line_access(user_id, line_id)
+        target = line_id
+    elif "*" in user_lines:
+        target = None
+    else:
+        target = user_lines[0] if user_lines else None  # stats 单产线
+
+    try:
+        stats = effect_tracker.get_effect_stats(line_id=target, days=days)
+        return stats
+    except Exception as e:
+        logger.warning(f"effect/stats 降级: {e}")
+        return _degraded_response({
+            "degraded": True, "error": str(e)[:100], "total": 0
+        })
+
+
+@app.get("/api/v1/effect/{tracking_id}")
+async def get_effect_tracking(tracking_id: str):
+    """M5-1: 查询单条效果跟踪记录"""
+    rec = effect_tracker.get_tracking(tracking_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"跟踪记录 {tracking_id} 不存在")
+    return rec
+
+
+@app.post("/api/v1/effect/{tracking_id}/evaluate")
+async def evaluate_effect(
+    tracking_id: str,
+    batch_id_after: Optional[str] = None,
+    user_id: str = Query("operator_01", description="用户ID"),
+):
+    """M5-1: 触发效果跟踪评估（T+N 天后执行）
+
+    查询调参后批次质量，对比调整前后指标，计算改善百分比。
+    """
+    rec = effect_tracker.get_tracking(tracking_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"跟踪记录 {tracking_id} 不存在")
+    _check_line_access(user_id, rec["line_id"], require_write=True)
+
+    try:
+        result = effect_tracker.track_effect(
+            tracking_id, batch_id_after=batch_id_after
+        )
+        if result is None:
+            return _degraded_response({
+                "success": False, "degraded": True, "error": "跟踪失败"
+            })
+        return {"success": True, **result}
+    except Exception as e:
+        logger.warning(f"effect/{tracking_id}/evaluate 降级: {e}")
+        return _degraded_response({
+            "success": False, "degraded": True, "error": str(e)[:200]
+        })
+
+
+@app.post("/api/v1/effect/run-due")
+async def run_due_effect_trackings(
+    user_id: str = Query("admin", description="仅 admin 可批量执行"),
+    line_id: Optional[str] = None,
+):
+    """M5-1: 批量执行到期的待跟踪记录（定时任务调用）"""
+    perms = get_user_permissions(user_id)
+    if perms["role"] != "admin":
+        raise HTTPException(status_code=403, detail="仅 admin 可批量执行跟踪")
+    try:
+        result = effect_tracker.run_due_trackings(line_id=line_id)
+        return {"success": True, **result}
+    except Exception as e:
+        logger.warning(f"effect/run-due 降级: {e}")
+        return _degraded_response({
+            "success": False, "degraded": True, "error": str(e)[:200]
+        })
 
 
 @app.websocket("/api/v1/stream")

@@ -140,6 +140,25 @@ class MemoryService:
                 line_id TEXT DEFAULT 'heat_treatment'
             )
         """)
+        # M5-1: 调参效果跟踪表
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS effect_tracking (
+                tracking_id TEXT PRIMARY KEY,
+                proposal_id TEXT,
+                case_id TEXT,
+                line_id TEXT DEFAULT 'heat_treatment',
+                batch_id_before TEXT,
+                batch_id_after TEXT,
+                metric_before REAL,
+                metric_after REAL,
+                improvement_pct REAL,
+                status TEXT DEFAULT 'pending',
+                days_offset INTEGER DEFAULT 7,
+                scheduled_at TIMESTAMP,
+                tracked_at TIMESTAMP,
+                note TEXT
+            )
+        """)
         # M4-9: 旧表迁移（已有表无 line_id 列时 ALTER TABLE 补列）
         self._migrate_add_line_id()
         # M4-16: 创建索引（查询模式：WHERE line_id=? AND created_at>=?）
@@ -155,12 +174,17 @@ class MemoryService:
         - get_line_stats: GROUP BY defect_type WHERE line_id=? AND created_at>=?
         - query_feedback: WHERE line_id=? AND created_at>=?
         - get_line_stats: WHERE line_id=? (conflicts)
+        - M5-1: effect_tracking WHERE line_id=? AND status=? AND scheduled_at<=?
         """
         indexes = [
             "CREATE INDEX IF NOT EXISTS idx_episodic_line_time ON episodic(line_id, created_at)",
             "CREATE INDEX IF NOT EXISTS idx_episodic_defect ON episodic(defect_type)",
             "CREATE INDEX IF NOT EXISTS idx_feedback_line_time ON feedback(line_id, created_at)",
             "CREATE INDEX IF NOT EXISTS idx_conflicts_line ON conflicts(line_id)",
+            # M5-1: 效果跟踪表索引
+            "CREATE INDEX IF NOT EXISTS idx_effect_line_status ON effect_tracking(line_id, status)",
+            "CREATE INDEX IF NOT EXISTS idx_effect_proposal ON effect_tracking(proposal_id)",
+            "CREATE INDEX IF NOT EXISTS idx_effect_scheduled ON effect_tracking(scheduled_at, status)",
         ]
         for sql in indexes:
             self.db.execute(sql)

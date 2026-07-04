@@ -30,6 +30,7 @@ test_files = [
     "tests/test_multi_tenant.py",
     "tests/test_degradation.py",
     "tests/test_sla.py",
+    "tests/test_effect_tracking.py",
 ]
 
 total_failed = 0
