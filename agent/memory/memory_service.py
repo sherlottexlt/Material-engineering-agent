@@ -161,6 +161,23 @@ class MemoryService:
                 attribution_result TEXT
             )
         """)
+        # M5-4: 失败案例库
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS failure_cases (
+                failure_id TEXT PRIMARY KEY,
+                case_id TEXT,
+                tracking_id TEXT,
+                line_id TEXT DEFAULT 'heat_treatment',
+                category TEXT,
+                confidence REAL,
+                improvement_pct REAL,
+                root_cause TEXT,
+                solution TEXT,
+                failure_reason TEXT,
+                collected_at TIMESTAMP,
+                status TEXT DEFAULT 'open'
+            )
+        """)
         # M4-9: 旧表迁移（已有表无 line_id 列时 ALTER TABLE 补列）
         self._migrate_add_line_id()
         # M5-2: 旧表迁移（已有 effect_tracking 表无归因列时 ALTER TABLE 补列）
@@ -189,6 +206,10 @@ class MemoryService:
             "CREATE INDEX IF NOT EXISTS idx_effect_line_status ON effect_tracking(line_id, status)",
             "CREATE INDEX IF NOT EXISTS idx_effect_proposal ON effect_tracking(proposal_id)",
             "CREATE INDEX IF NOT EXISTS idx_effect_scheduled ON effect_tracking(scheduled_at, status)",
+            # M5-4: 失败案例库索引
+            "CREATE INDEX IF NOT EXISTS idx_failure_line ON failure_cases(line_id)",
+            "CREATE INDEX IF NOT EXISTS idx_failure_category ON failure_cases(category, status)",
+            "CREATE INDEX IF NOT EXISTS idx_failure_case ON failure_cases(case_id)",
         ]
         for sql in indexes:
             self.db.execute(sql)

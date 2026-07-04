@@ -156,6 +156,10 @@ memory = MemoryService()
 from agent.effect_tracker import EffectTracker
 effect_tracker = EffectTracker(memory)
 
+# M5-4: 全局 FailureCaseCollector（复用 memory 的 db 连接）
+from agent.failure_case_collector import FailureCaseCollector
+failure_collector = FailureCaseCollector(memory)
+
 # 存储已完成的归因结果（M0 用内存存储，M1 切换为 checkpointer）
 _results_store: dict[str, dict] = {}
 
@@ -1136,6 +1140,126 @@ async def run_due_effect_trackings(
         return {"success": True, **result}
     except Exception as e:
         logger.warning(f"effect/run-due 降级: {e}")
+        return _degraded_response({
+            "success": False, "degraded": True, "error": str(e)[:200]
+        })
+
+
+# ===== M5-4: 失败案例归集 =====
+
+
+@app.post("/api/v1/failures/collect")
+async def collect_failures(
+    user_id: str = Query("admin", description="仅 admin 可触发收集"),
+    line_id: Optional[str] = None,
+    days: int = 30,
+    min_confidence: float = 0.3,
+):
+    """M5-4: 触发失败案例归集（扫描低分案例 + 反效果跟踪 + 被拒绝反馈）"""
+    perms = get_user_permissions(user_id)
+    if perms["role"] != "admin":
+        raise HTTPException(status_code=403, detail="仅 admin 可触发失败案例收集")
+    try:
+        result = failure_collector.collect_all(
+            line_id=line_id, days=days, min_confidence=min_confidence
+        )
+        return {"success": True, **result}
+    except Exception as e:
+        logger.warning(f"failures/collect 降级: {e}")
+        return _degraded_response({
+            "success": False, "degraded": True, "error": str(e)[:200]
+        })
+
+
+@app.get("/api/v1/failures")
+async def list_failures(
+    category: Optional[str] = None,
+    status: Optional[str] = None,
+    line_id: Optional[str] = None,
+    user_id: str = Query("operator_01", description="用户ID（权限过滤）"),
+    days: int = 30,
+    limit: int = 100,
+):
+    """M5-4: 列出失败案例（按产线权限过滤）"""
+    user_lines = get_user_lines(user_id)
+    if line_id:
+        _check_line_access(user_id, line_id)
+        target = line_id
+    elif "*" in user_lines:
+        target = None  # admin 全部
+    else:
+        target = user_lines  # 多产线 IN 查询
+
+    try:
+        records = failure_collector.list_failures(
+            line_id=target, category=category, status=status,
+            days=days, limit=limit,
+        )
+        return {"total": len(records), "records": records}
+    except Exception as e:
+        logger.warning(f"failures 列表降级: {e}")
+        return _degraded_response({
+            "total": 0, "records": [], "degraded": True, "error": str(e)[:100]
+        })
+
+
+@app.get("/api/v1/failures/stats")
+async def failure_stats(
+    line_id: Optional[str] = None,
+    user_id: str = Query("operator_01", description="用户ID"),
+    days: int = 30,
+):
+    """M5-4: 失败案例统计"""
+    user_lines = get_user_lines(user_id)
+    if line_id:
+        _check_line_access(user_id, line_id)
+        target = line_id
+    elif "*" in user_lines:
+        target = None
+    else:
+        target = user_lines
+
+    try:
+        stats = failure_collector.get_failure_stats(line_id=target, days=days)
+        return stats
+    except Exception as e:
+        logger.warning(f"failures/stats 降级: {e}")
+        return _degraded_response({
+            "degraded": True, "error": str(e)[:100], "total": 0
+        })
+
+
+@app.get("/api/v1/failures/{failure_id}")
+async def get_failure(failure_id: str):
+    """M5-4: 查询单条失败案例"""
+    rec = failure_collector.get_failure(failure_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"失败案例 {failure_id} 不存在")
+    return rec
+
+
+@app.patch("/api/v1/failures/{failure_id}")
+async def update_failure(
+    failure_id: str,
+    status: str = Query(..., description="新状态: open/analyzed/resolved"),
+    note: Optional[str] = None,
+    user_id: str = Query("operator_01", description="用户ID"),
+):
+    """M5-4: 更新失败案例状态（需写权限）"""
+    rec = failure_collector.get_failure(failure_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"失败案例 {failure_id} 不存在")
+    _check_line_access(user_id, rec["line_id"], require_write=True)
+
+    try:
+        success = failure_collector.update_failure_status(failure_id, status, note)
+        if not success:
+            return _degraded_response({
+                "success": False, "degraded": True, "error": "更新失败"
+            })
+        return {"success": True, "failure_id": failure_id, "status": status}
+    except Exception as e:
+        logger.warning(f"failures/{failure_id} 更新降级: {e}")
         return _degraded_response({
             "success": False, "degraded": True, "error": str(e)[:200]
         })
