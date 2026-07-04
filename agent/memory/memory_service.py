@@ -453,7 +453,7 @@ class MemoryService:
         proposal_id: Optional[str] = None,
         user_id: Optional[str] = None,
         days: int = 30,
-        line_id: Optional[str] = None,
+        line_id: Optional[str | list[str]] = None,
     ) -> list[dict]:
         """查询用户反馈
 
@@ -462,22 +462,29 @@ class MemoryService:
             user_id: 用户ID（可选）
             days: 查询天数
             line_id: 产线ID过滤（可选，M4-9 多产线隔离）
+                M4-16: 支持 str 或 list[str]，list 时用 IN 子句一次查询。
 
         Returns:
             反馈记录列表
         """
         since = datetime.now() - timedelta(days=days)
         query = "SELECT * FROM feedback WHERE created_at >= ?"
-        params = [since]
+        params: list = [since]
         if proposal_id:
             query += " AND proposal_id = ?"
             params.append(proposal_id)
         if user_id:
             query += " AND user_id = ?"
             params.append(user_id)
+        # M4-16: line_id 支持 str 或 list[str]，list 用 IN 子句
         if line_id:
-            query += " AND line_id = ?"
-            params.append(line_id)
+            if isinstance(line_id, (list, tuple)):
+                placeholders = ",".join("?" for _ in line_id)
+                query += f" AND line_id IN ({placeholders})"
+                params.extend(line_id)
+            else:
+                query += " AND line_id = ?"
+                params.append(line_id)
         query += " ORDER BY created_at DESC"
         cur = self.db.execute(query, params)
         cols = [d[0] for d in cur.description]
@@ -687,11 +694,18 @@ class MemoryService:
         columns = [d[0] for d in cur.description]
         return [dict(zip(columns, row)) for row in cur.fetchall()]
 
-    def list_all_semantic(self, limit: int = 100) -> list[dict]:
+    def list_all_semantic(
+        self,
+        limit: int = 100,
+        line_id: Optional[str | list[str]] = None,
+    ) -> list[dict]:
         """列出全部长期记忆（Chroma 案例）
 
         Args:
             limit: 最大返回数量
+            line_id: 产线ID过滤（可选，M4-9 多产线隔离）
+                M4-16: 支持 str 或 list[str]，用 Chroma where 服务端过滤，
+                避免拉全量再 Python 端过滤。
 
         Returns:
             案例列表（含 id/document/metadata）
@@ -701,8 +715,15 @@ class MemoryService:
             return []
 
         try:
-            # Chroma get 不传 ids 时返回全部（受 limit 限制）
-            result = self._collection.get(limit=limit, include=["metadatas", "documents"])
+            # M4-16: line_id 用 Chroma where 服务端过滤
+            kwargs: dict = {"limit": limit, "include": ["metadatas", "documents"]}
+            if line_id:
+                if isinstance(line_id, (list, tuple)):
+                    # Chroma where 支持 $in 操作符
+                    kwargs["where"] = {"line_id": {"$in": list(line_id)}}
+                else:
+                    kwargs["where"] = {"line_id": line_id}
+            result = self._collection.get(**kwargs)
             ids = result.get("ids", [])
             documents = result.get("documents", [])
             metadatas = result.get("metadatas", [])
@@ -1092,23 +1113,33 @@ class MemoryService:
     def list_conflicts(
         self,
         limit: int = 100,
-        line_id: Optional[str] = None,
+        line_id: Optional[str | list[str]] = None,
     ) -> list[dict]:
         """列出全部冲突记录（按时间倒序）
 
         Args:
             limit: 最大返回数量
             line_id: 产线ID过滤（可选，M4-9 多产线隔离）
+                M4-16: 支持 str 或 list[str]，list 时用 IN 子句一次查询。
 
         Returns:
             冲突记录列表
         """
+        # M4-16: line_id 支持 str 或 list[str]，list 用 IN 子句
         if line_id:
-            cur = self.db.execute(
-                "SELECT * FROM conflicts WHERE line_id = ? "
-                "ORDER BY created_at DESC LIMIT ?",
-                (line_id, limit),
-            )
+            if isinstance(line_id, (list, tuple)):
+                placeholders = ",".join("?" for _ in line_id)
+                cur = self.db.execute(
+                    f"SELECT * FROM conflicts WHERE line_id IN ({placeholders}) "
+                    "ORDER BY created_at DESC LIMIT ?",
+                    (*line_id, limit),
+                )
+            else:
+                cur = self.db.execute(
+                    "SELECT * FROM conflicts WHERE line_id = ? "
+                    "ORDER BY created_at DESC LIMIT ?",
+                    (line_id, limit),
+                )
         else:
             cur = self.db.execute(
                 "SELECT * FROM conflicts ORDER BY created_at DESC LIMIT ?",

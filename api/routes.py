@@ -455,17 +455,16 @@ async def list_semantic(
     user_id: str = Query("operator_01", description="用户ID（M4-10）"),
 ):
     """列出全部长期记忆（Chroma 案例库）"""
-    # M4-10: 暂不按产线过滤（Chroma 全量返回），admin 可见全部
-    records = memory.list_all_semantic(limit=limit)
     user_lines = get_user_lines(user_id)
-    if "*" not in user_lines and line_id is None:
-        # 非 admin 用户：前端按 metadata.line_id 过滤
-        records = [r for r in records
-                   if (r.get("metadata") or {}).get("line_id") in user_lines]
-    elif line_id:
+    if line_id:
         _check_line_access(user_id, line_id)
-        records = [r for r in records
-                   if (r.get("metadata") or {}).get("line_id") == line_id]
+        # M4-16: Chroma where 服务端过滤
+        records = memory.list_all_semantic(limit=limit, line_id=line_id)
+    elif "*" in user_lines:
+        records = memory.list_all_semantic(limit=limit)
+    else:
+        # M4-16: 非 admin 用 $in 服务端过滤，避免拉全量再 Python 过滤
+        records = memory.list_all_semantic(limit=limit, line_id=user_lines)
     return {"total": len(records), "records": records}
 
 
@@ -483,9 +482,8 @@ async def list_feedback(
     elif "*" in user_lines:
         records = memory.list_all_feedback(limit=limit)
     else:
-        records = []
-        for lid in user_lines:
-            records.extend(memory.query_feedback(days=365, line_id=lid))
+        # M4-16: 单次 IN 查询替代 N+1 循环
+        records = memory.query_feedback(days=365, line_id=user_lines)
     return {"total": len(records), "records": records}
 
 
@@ -505,9 +503,8 @@ async def list_conflicts(
     elif "*" in user_lines:
         records = memory.list_conflicts(limit=limit)
     else:
-        records = []
-        for lid in user_lines:
-            records.extend(memory.list_conflicts(limit=limit, line_id=lid))
+        # M4-16: 单次 IN 查询替代 N+1 循环
+        records = memory.list_conflicts(limit=limit, line_id=user_lines)
     return {"total": len(records), "records": records}
 
 
