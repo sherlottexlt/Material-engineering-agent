@@ -1013,6 +1013,37 @@ async def evaluate_effect(
         })
 
 
+@app.post("/api/v1/effect/{tracking_id}/attribute")
+async def attribute_effect(
+    tracking_id: str,
+    user_id: str = Query("operator_01", description="用户ID"),
+):
+    """M5-2: 把跟踪效果归因到对应案例（更新 confidence）
+
+    将真实生产效果（改善百分比）反馈到案例库 confidence，
+    形成"效果→案例→下次检索"的闭环。
+    幂等：已归因的记录直接返回上次结果。
+    """
+    rec = effect_tracker.get_tracking(tracking_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"跟踪记录 {tracking_id} 不存在")
+    _check_line_access(user_id, rec["line_id"], require_write=True)
+
+    try:
+        result = effect_tracker.attribute_effect(tracking_id)
+        if result is None:
+            return _degraded_response({
+                "success": False, "degraded": True,
+                "error": "归因失败（可能未 tracked 或无 improvement_pct）"
+            })
+        return {"success": True, **result}
+    except Exception as e:
+        logger.warning(f"effect/{tracking_id}/attribute 降级: {e}")
+        return _degraded_response({
+            "success": False, "degraded": True, "error": str(e)[:200]
+        })
+
+
 @app.post("/api/v1/effect/run-due")
 async def run_due_effect_trackings(
     user_id: str = Query("admin", description="仅 admin 可批量执行"),

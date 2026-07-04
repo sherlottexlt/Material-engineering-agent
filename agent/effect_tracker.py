@@ -1,17 +1,20 @@
 """
-MetaCraft Agent 调参效果跟踪（M5-1）
+MetaCraft Agent 调参效果跟踪（M5-1）+ 效果归因（M5-2）
 
 T+N 天自动跟踪调参后批次质量，对比调整前后指标。
+M5-2: 跟踪完成后把效果反馈到对应案例 confidence，形成闭环。
 
 数据流：
 1. Agent 产出 proposal → 调用 schedule_tracking() 创建 pending 记录
 2. T+N 天后调用 track_effect() → 查询调参后批次质量 → 计算改善百分比
-3. 效果数据反馈到案例库（M5-2 效果归因）
+3. M5-2: 调用 attribute_effect() → 把改善效果反馈到案例 confidence（归因）
+   - run_due_trackings() 会自动执行 track + attribute 闭环
 
 由于无真实 MES 接入，提供 quality_fetcher 回调可注入；
 默认 _default_quality_fetcher 基于 batch_id 哈希生成稳定质量指标。
 """
 import hashlib
+import json
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -211,6 +214,85 @@ class EffectTracker:
         )
         return result
 
+    # ===== M5-2: 效果归因 =====
+
+    def attribute_effect(self, tracking_id: str) -> Optional[dict]:
+        """M5-2: 把跟踪效果归因到对应案例（更新 confidence）
+
+        跟踪完成后调用，将真实生产效果反馈到案例库 confidence，
+        形成"效果→案例→下次检索"的闭环。
+
+        幂等：已归因的记录（attribution_done=1）直接返回上次结果。
+        若记录尚未 tracked，会先尝试 track_effect。
+
+        Args:
+            tracking_id: 跟踪记录ID
+
+        Returns:
+            归因结果字典，含 confidence 变化；失败返回 None
+        """
+        rec = self.get_tracking(tracking_id)
+        if rec is None:
+            logger.warning(f"M5-2 归因失败：跟踪记录不存在 {tracking_id}")
+            return None
+
+        # 幂等：已归因直接返回
+        if rec.get("attribution_done") == 1 and rec.get("attribution_result"):
+            try:
+                return json.loads(rec["attribution_result"])
+            except (json.JSONDecodeError, TypeError):
+                pass  # JSON 损坏则重新归因
+
+        # 必须先 tracked
+        if rec["status"] != "tracked":
+            tracked = self.track_effect(tracking_id)
+            if tracked is None:
+                logger.warning(f"M5-2 归因失败：跟踪失败 {tracking_id}")
+                return None
+            rec = self.get_tracking(tracking_id)  # 重新取最新
+
+        improvement = rec.get("improvement_pct")
+        case_id = rec.get("case_id")
+        if improvement is None or case_id is None:
+            logger.warning(
+                f"M5-2 归因跳过：无 improvement_pct 或 case_id (tracking={tracking_id})"
+            )
+            return None
+
+        # 调用 MemoryService 更新案例 confidence
+        attribution = self.memory.update_confidence_from_effect(
+            case_id=case_id,
+            improvement_pct=float(improvement),
+        )
+
+        result = {
+            "tracking_id": tracking_id,
+            "case_id": case_id,
+            "improvement_pct": improvement,
+            "attribution_done": attribution["updated"],
+            "old_confidence": attribution["old_confidence"],
+            "new_confidence": attribution["new_confidence"],
+            "effect_score": attribution["effect_score"],
+            "attributed_at": datetime.now().isoformat(),
+        }
+
+        # 持久化归因结果
+        self.db.execute(
+            """UPDATE effect_tracking
+               SET attribution_done = ?, attribution_result = ?
+               WHERE tracking_id = ?""",
+            (1 if attribution["updated"] else 0,
+             json.dumps(result, ensure_ascii=False),
+             tracking_id),
+        )
+        self.db.commit()
+
+        logger.info(
+            f"M5-2 归因完成: tracking={tracking_id}, case={case_id}, "
+            f"confidence {attribution['old_confidence']} → {attribution['new_confidence']}"
+        )
+        return result
+
     # ===== 查询 =====
 
     def get_tracking(self, tracking_id: str) -> Optional[dict]:
@@ -359,23 +441,29 @@ class EffectTracker:
     def run_due_trackings(self, line_id: Optional[str] = None) -> dict:
         """执行所有到期的待跟踪记录（scheduled_at <= now 且 status=pending）
 
+        M5-2: 跟踪完成后自动归因（把效果反馈到案例 confidence）。
         用于定时任务（如 cron / APScheduler）每日扫描。
 
         Args:
             line_id: 限定产线（None 则全部）
 
         Returns:
-            {"executed": int, "succeeded": int, "failed": int}
+            {"executed": int, "succeeded": int, "failed": int, "attributed": int}
         """
         pending = self.list_pending(line_id=line_id)
         executed = 0
         succeeded = 0
         failed = 0
+        attributed = 0
         for rec in pending:
             try:
                 result = self.track_effect(rec["tracking_id"])
                 if result is not None:
                     succeeded += 1
+                    # M5-2: 自动归因
+                    attr = self.attribute_effect(rec["tracking_id"])
+                    if attr is not None and attr.get("attribution_done"):
+                        attributed += 1
                 else:
                     failed += 1
                 executed += 1
@@ -383,5 +471,13 @@ class EffectTracker:
                 logger.error(f"跟踪 {rec['tracking_id']} 失败: {e}")
                 failed += 1
                 executed += 1
-        logger.info(f"M5-1 批量跟踪: 执行 {executed}，成功 {succeeded}，失败 {failed}")
-        return {"executed": executed, "succeeded": succeeded, "failed": failed}
+        logger.info(
+            f"M5-1/2 批量跟踪+归因: 执行 {executed}，成功 {succeeded}，"
+            f"失败 {failed}，归因 {attributed}"
+        )
+        return {
+            "executed": executed,
+            "succeeded": succeeded,
+            "failed": failed,
+            "attributed": attributed,
+        }

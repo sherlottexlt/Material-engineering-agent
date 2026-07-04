@@ -156,11 +156,15 @@ class MemoryService:
                 days_offset INTEGER DEFAULT 7,
                 scheduled_at TIMESTAMP,
                 tracked_at TIMESTAMP,
-                note TEXT
+                note TEXT,
+                attribution_done INTEGER DEFAULT 0,
+                attribution_result TEXT
             )
         """)
         # M4-9: 旧表迁移（已有表无 line_id 列时 ALTER TABLE 补列）
         self._migrate_add_line_id()
+        # M5-2: 旧表迁移（已有 effect_tracking 表无归因列时 ALTER TABLE 补列）
+        self._migrate_add_attribution_columns()
         # M4-16: 创建索引（查询模式：WHERE line_id=? AND created_at>=?）
         self._create_indexes()
         self.db.commit()
@@ -199,6 +203,21 @@ class MemoryService:
                     f"ALTER TABLE {table} ADD COLUMN line_id TEXT DEFAULT 'heat_treatment'"
                 )
                 logger.info(f"表 {table} 已迁移：新增 line_id 列")
+
+    def _migrate_add_attribution_columns(self):
+        """M5-2: 为旧版 effect_tracking 表补充归因列（向后兼容）"""
+        cur = self.db.execute("PRAGMA table_info(effect_tracking)")
+        columns = [row[1] for row in cur.fetchall()]
+        if "attribution_done" not in columns:
+            self.db.execute(
+                "ALTER TABLE effect_tracking ADD COLUMN attribution_done INTEGER DEFAULT 0"
+            )
+            logger.info("表 effect_tracking 已迁移：新增 attribution_done 列")
+        if "attribution_result" not in columns:
+            self.db.execute(
+                "ALTER TABLE effect_tracking ADD COLUMN attribution_result TEXT"
+            )
+            logger.info("表 effect_tracking 已迁移：新增 attribution_result 列")
 
     def _ensure_chroma(self):
         """初始化 Chroma 客户端
@@ -645,6 +664,107 @@ class MemoryService:
                 "old_confidence": None,
                 "new_confidence": None,
                 "updated": False,
+            }
+
+    # ===== M5-2: 效果归因（把跟踪效果反馈到案例 confidence）=====
+
+    @staticmethod
+    def _improvement_to_effect_score(improvement_pct: float) -> float:
+        """将改善百分比映射为 0-1 的效果分
+
+        映射规则（缺陷率下降为正，即改善）：
+        - improvement >= 30  → 1.0（显著有效）
+        - 10 <= improvement < 30 → 线性 0.7-0.95
+        - 0 <= improvement < 10   → 线性 0.5-0.7
+        - -10 < improvement < 0   → 线性 0.3-0.5
+        - improvement <= -10 → 0.1（反效果，大幅降权）
+
+        Args:
+            improvement_pct: 改善百分比（正=缺陷率下降，负=上升）
+
+        Returns:
+            效果分 0-1
+        """
+        if improvement_pct >= 30:
+            return 1.0
+        if improvement_pct >= 10:
+            # 10→0.7, 30→0.95
+            return round(0.7 + (improvement_pct - 10) / 20 * 0.25, 3)
+        if improvement_pct >= 0:
+            # 0→0.5, 10→0.7
+            return round(0.5 + improvement_pct / 10 * 0.2, 3)
+        if improvement_pct > -10:
+            # 0→0.5, -10→0.3
+            return round(0.5 + improvement_pct / 10 * 0.2, 3)
+        return 0.1
+
+    def update_confidence_from_effect(
+        self,
+        case_id: str,
+        improvement_pct: float,
+    ) -> dict:
+        """M5-2: 根据真实效果更新案例置信度
+
+        效果数据比单条用户反馈更可信，权重：效果分 0.4 + 旧 confidence 0.6。
+        改善显著（>=20%）额外 +0.05 奖励，反效果（<=-10%）额外 -0.05 惩罚。
+
+        Args:
+            case_id: 案例ID
+            improvement_pct: 改善百分比（正=缺陷率下降）
+
+        Returns:
+            {"old_confidence": x, "new_confidence": y, "effect_score": z, "updated": bool}
+        """
+        self._ensure_chroma()
+        if self._collection is None:
+            return {
+                "old_confidence": None, "new_confidence": None,
+                "effect_score": None, "updated": False,
+            }
+
+        try:
+            existing = self._collection.get(ids=[case_id], include=["metadatas"])
+            if not existing["metadatas"]:
+                logger.warning(f"M5-2 归因失败：案例不存在 {case_id}")
+                return {
+                    "old_confidence": None, "new_confidence": None,
+                    "effect_score": None, "updated": False,
+                }
+
+            metadata = existing["metadatas"][0]
+            old_conf = float(metadata.get("confidence", 0.5))
+            effect_score = self._improvement_to_effect_score(improvement_pct)
+
+            # 加权：效果分 0.4 + 旧 confidence 0.6
+            new_conf = old_conf * 0.6 + effect_score * 0.4
+            # 显著有效/反效果的额外奖惩
+            if improvement_pct >= 20:
+                new_conf = min(1.0, new_conf + 0.05)
+            elif improvement_pct <= -10:
+                new_conf = max(0.1, new_conf - 0.05)
+            new_conf = round(max(0.05, min(1.0, new_conf)), 3)
+
+            metadata["confidence"] = new_conf
+            # 记录效果归因标记到 metadata（便于检索/统计）
+            metadata["last_effect_improvement"] = float(improvement_pct)
+            metadata["last_attributed_at"] = datetime.now().isoformat()
+
+            self._collection.update(ids=[case_id], metadatas=[metadata])
+            logger.info(
+                f"M5-2 效果归因: 案例 {case_id} confidence {old_conf} → {new_conf} "
+                f"(improvement={improvement_pct}%, effect_score={effect_score})"
+            )
+            return {
+                "old_confidence": old_conf,
+                "new_confidence": new_conf,
+                "effect_score": effect_score,
+                "updated": True,
+            }
+        except Exception as e:
+            logger.error(f"M5-2 效果归因失败: {e}")
+            return {
+                "old_confidence": None, "new_confidence": None,
+                "effect_score": None, "updated": False,
             }
 
     def batch_update_confidence_from_feedback(self, days: int = 30) -> dict:
