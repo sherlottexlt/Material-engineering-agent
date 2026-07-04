@@ -973,6 +973,84 @@ async def effect_stats(
         })
 
 
+@app.get("/api/v1/effect/dashboard")
+async def effect_dashboard(
+    line_id: Optional[str] = None,
+    user_id: str = Query("operator_01", description="用户ID（M4-10）"),
+    days: int = 30,
+    limit: int = 200,
+):
+    """M5-3: 效果看板聚合数据（KPI + 改善分布 + 归因统计 + 记录列表）
+
+    一次返回看板所需全部数据，减少前端请求次数。
+    """
+    user_lines = get_user_lines(user_id)
+    if line_id:
+        _check_line_access(user_id, line_id)
+        target = line_id
+        targets = [line_id]
+    elif "*" in user_lines:
+        target = None  # admin 全部
+        targets = None  # None 表示全部
+    else:
+        target = user_lines[0] if user_lines else None
+        targets = user_lines
+
+    try:
+        # 获取记录（按权限过滤）
+        if targets is None:
+            records = effect_tracker.list_trackings(days=days, limit=limit)
+        else:
+            records = effect_tracker.list_trackings(
+                line_id=targets, days=days, limit=limit
+            )
+
+        # 统计
+        tracked = [r for r in records if r.get("status") == "tracked"]
+        improvements = [r["improvement_pct"] for r in tracked
+                        if r.get("improvement_pct") is not None]
+        attributed = sum(1 for r in records if r.get("attribution_done") == 1)
+
+        # 改善率分桶
+        bins = {"<=-10": 0, "-10~0": 0, "0~10": 0, "10~20": 0, "20~30": 0, ">=30": 0}
+        for imp in improvements:
+            if imp <= -10:
+                bins["<=-10"] += 1
+            elif imp < 0:
+                bins["-10~0"] += 1
+            elif imp < 10:
+                bins["0~10"] += 1
+            elif imp < 20:
+                bins["10~20"] += 1
+            elif imp < 30:
+                bins["20~30"] += 1
+            else:
+                bins[">=30"] += 1
+
+        return {
+            "kpi": {
+                "total": len(records),
+                "tracked": len(tracked),
+                "pending": sum(1 for r in records if r.get("status") == "pending"),
+                "skipped": sum(1 for r in records if r.get("status") == "skipped"),
+                "avg_improvement": round(sum(improvements) / len(improvements), 2)
+                                   if improvements else 0.0,
+                "positive_count": sum(1 for x in improvements if x > 0),
+                "negative_count": sum(1 for x in improvements if x < 0),
+                "attributed_count": attributed,
+            },
+            "improvement_distribution": bins,
+            "records": records,
+            "visible_lines": user_lines if "*" not in user_lines else "all",
+        }
+    except Exception as e:
+        logger.warning(f"effect/dashboard 降级: {e}")
+        return _degraded_response({
+            "degraded": True, "error": str(e)[:100],
+            "kpi": {}, "records": [],
+        })
+
+
 @app.get("/api/v1/effect/{tracking_id}")
 async def get_effect_tracking(tracking_id: str):
     """M5-1: 查询单条效果跟踪记录"""

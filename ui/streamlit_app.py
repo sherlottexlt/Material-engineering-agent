@@ -508,10 +508,10 @@ st.caption("材料加工产线智能工艺优化 Agent")
 
 # ===== 侧栏 =====
 with st.sidebar:
-    # M3-12: 页面选择器（缺陷归因 / 记忆浏览 / 跨产线看板）
+    # M3-12: 页面选择器（缺陷归因 / 记忆浏览 / 跨产线看板 / 效果看板）
     page = st.radio(
         "页面",
-        ["缺陷归因", "记忆浏览", "跨产线看板"],
+        ["缺陷归因", "记忆浏览", "跨产线看板", "效果看板"],
         help="切换主界面功能",
     )
 
@@ -583,6 +583,12 @@ if page == "记忆浏览":
 if page == "跨产线看板":
     from ui.dashboard import render_dashboard
     render_dashboard()
+    st.stop()
+
+# M5-3: 效果看板页面
+if page == "效果看板":
+    from ui.effect_dashboard import render_effect_dashboard
+    render_effect_dashboard()
     st.stop()
 
 st.header("缺陷归因")
