@@ -216,6 +216,47 @@ class MemoryService:
                 learned_at TIMESTAMP
             )
         """)
+        # M5-8: A/B 测试实验表
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS ab_experiments (
+                experiment_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                line_id TEXT DEFAULT 'heat_treatment',
+                variant_a_config TEXT,
+                variant_b_config TEXT,
+                metric_names TEXT,
+                status TEXT DEFAULT 'draft',
+                sample_size_target INTEGER DEFAULT 100,
+                created_by TEXT DEFAULT 'admin',
+                created_at TIMESTAMP,
+                started_at TIMESTAMP,
+                stopped_at TIMESTAMP
+            )
+        """)
+        # M5-8: A/B 测试分配记录表
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS ab_assignments (
+                assignment_id TEXT PRIMARY KEY,
+                experiment_id TEXT,
+                variant TEXT,
+                case_id TEXT,
+                line_id TEXT DEFAULT 'heat_treatment',
+                assigned_at TIMESTAMP
+            )
+        """)
+        # M5-8: A/B 测试指标记录表
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS ab_metrics (
+                metric_id TEXT PRIMARY KEY,
+                experiment_id TEXT,
+                assignment_id TEXT,
+                variant TEXT,
+                metric_name TEXT,
+                metric_value REAL,
+                recorded_at TIMESTAMP
+            )
+        """)
         # M4-9: 旧表迁移（已有表无 line_id 列时 ALTER TABLE 补列）
         self._migrate_add_line_id()
         # M5-2: 旧表迁移（已有 effect_tracking 表无归因列时 ALTER TABLE 补列）
@@ -256,6 +297,13 @@ class MemoryService:
             "CREATE INDEX IF NOT EXISTS idx_learning_status ON learning_candidates(status)",
             "CREATE INDEX IF NOT EXISTS idx_learning_line ON learning_candidates(line_id, status)",
             "CREATE INDEX IF NOT EXISTS idx_learning_source ON learning_candidates(source_type, status)",
+            # M5-8: A/B 测试索引
+            "CREATE INDEX IF NOT EXISTS idx_ab_exp_status ON ab_experiments(status)",
+            "CREATE INDEX IF NOT EXISTS idx_ab_exp_line ON ab_experiments(line_id, status)",
+            "CREATE INDEX IF NOT EXISTS idx_ab_assign_exp ON ab_assignments(experiment_id, variant)",
+            "CREATE INDEX IF NOT EXISTS idx_ab_assign_case ON ab_assignments(case_id)",
+            "CREATE INDEX IF NOT EXISTS idx_ab_metric_exp ON ab_metrics(experiment_id, metric_name)",
+            "CREATE INDEX IF NOT EXISTS idx_ab_metric_assign ON ab_metrics(assignment_id)",
         ]
         for sql in indexes:
             self.db.execute(sql)
@@ -1297,6 +1345,204 @@ class MemoryService:
             "by_source": by_source,
             "rules_extracted": rules_extracted,
             "rules_added_to_handbook": rules_added,
+        }
+
+    # ===== M5-8: A/B 测试 =====
+
+    def save_ab_experiment(
+        self,
+        experiment_id: str,
+        name: str,
+        description: str,
+        line_id: str,
+        variant_a_config: str,
+        variant_b_config: str,
+        metric_names: str,
+        sample_size_target: int,
+        created_by: str,
+    ) -> bool:
+        """保存 A/B 测试实验"""
+        now = datetime.now()
+        self.db.execute(
+            "INSERT INTO ab_experiments VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (experiment_id, name, description, line_id,
+             variant_a_config, variant_b_config, metric_names,
+             "draft", sample_size_target, created_by,
+             now, None, None),
+        )
+        self.db.commit()
+        return True
+
+    def list_ab_experiments(
+        self,
+        status: Optional[str] = None,
+        line_id: Optional[str | list[str]] = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        """列出 A/B 测试实验"""
+        query = "SELECT * FROM ab_experiments WHERE 1=1"
+        params: list = []
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+        if line_id:
+            if isinstance(line_id, (list, tuple)):
+                placeholders = ",".join("?" for _ in line_id)
+                query += f" AND line_id IN ({placeholders})"
+                params.extend(line_id)
+            else:
+                query += " AND line_id = ?"
+                params.append(line_id)
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        cur = self.db.execute(query, params)
+        rows = cur.fetchall()
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r)) for r in rows]
+
+    def get_ab_experiment(self, experiment_id: str) -> Optional[dict]:
+        """查询单个 A/B 测试实验"""
+        cur = self.db.execute(
+            "SELECT * FROM ab_experiments WHERE experiment_id = ?",
+            (experiment_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        cols = [d[0] for d in cur.description]
+        return dict(zip(cols, row))
+
+    def update_ab_experiment_status(
+        self,
+        experiment_id: str,
+        status: str,
+    ) -> bool:
+        """更新实验状态（draft → running → stopped/completed）
+        自动记录 started_at / stopped_at 时间戳。
+        """
+        now = datetime.now()
+        if status == "running":
+            self.db.execute(
+                "UPDATE ab_experiments SET status = ?, started_at = ? WHERE experiment_id = ?",
+                (status, now, experiment_id),
+            )
+        elif status in ("stopped", "completed"):
+            self.db.execute(
+                "UPDATE ab_experiments SET status = ?, stopped_at = ? WHERE experiment_id = ?",
+                (status, now, experiment_id),
+            )
+        else:
+            self.db.execute(
+                "UPDATE ab_experiments SET status = ? WHERE experiment_id = ?",
+                (status, experiment_id),
+            )
+        self.db.commit()
+        return self.db.total_changes > 0
+
+    def save_ab_assignment(
+        self,
+        assignment_id: str,
+        experiment_id: str,
+        variant: str,
+        case_id: str,
+        line_id: str,
+    ) -> bool:
+        """保存 A/B 分配记录"""
+        now = datetime.now()
+        self.db.execute(
+            "INSERT INTO ab_assignments VALUES (?, ?, ?, ?, ?, ?)",
+            (assignment_id, experiment_id, variant, case_id, line_id, now),
+        )
+        self.db.commit()
+        return True
+
+    def get_ab_assignment(
+        self,
+        experiment_id: str,
+        case_id: str,
+    ) -> Optional[dict]:
+        """查询分配记录（同 case_id + experiment_id 唯一）"""
+        cur = self.db.execute(
+            "SELECT * FROM ab_assignments WHERE experiment_id = ? AND case_id = ?",
+            (experiment_id, case_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        cols = [d[0] for d in cur.description]
+        return dict(zip(cols, row))
+
+    def list_ab_assignments(
+        self,
+        experiment_id: str,
+        variant: Optional[str] = None,
+        limit: int = 1000,
+    ) -> list[dict]:
+        """列出实验的分配记录"""
+        query = "SELECT * FROM ab_assignments WHERE experiment_id = ?"
+        params: list = [experiment_id]
+        if variant:
+            query += " AND variant = ?"
+            params.append(variant)
+        query += " ORDER BY assigned_at DESC LIMIT ?"
+        params.append(limit)
+        cur = self.db.execute(query, params)
+        rows = cur.fetchall()
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r)) for r in rows]
+
+    def save_ab_metric(
+        self,
+        metric_id: str,
+        experiment_id: str,
+        assignment_id: str,
+        variant: str,
+        metric_name: str,
+        metric_value: float,
+    ) -> bool:
+        """保存指标记录"""
+        now = datetime.now()
+        self.db.execute(
+            "INSERT INTO ab_metrics VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (metric_id, experiment_id, assignment_id, variant,
+             metric_name, metric_value, now),
+        )
+        self.db.commit()
+        return True
+
+    def list_ab_metrics(
+        self,
+        experiment_id: str,
+        variant: Optional[str] = None,
+        metric_name: Optional[str] = None,
+    ) -> list[dict]:
+        """列出实验的指标记录"""
+        query = "SELECT * FROM ab_metrics WHERE experiment_id = ?"
+        params: list = [experiment_id]
+        if variant:
+            query += " AND variant = ?"
+            params.append(variant)
+        if metric_name:
+            query += " AND metric_name = ?"
+            params.append(metric_name)
+        query += " ORDER BY recorded_at ASC"
+        cur = self.db.execute(query, params)
+        rows = cur.fetchall()
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r)) for r in rows]
+
+    def get_ab_stats(self) -> dict:
+        """获取 A/B 测试总体统计"""
+        cur = self.db.execute("SELECT status, COUNT(*) FROM ab_experiments GROUP BY status")
+        by_status = {row[0]: row[1] for row in cur.fetchall()}
+        cur = self.db.execute("SELECT COUNT(*) FROM ab_assignments")
+        total_assignments = cur.fetchone()[0]
+        cur = self.db.execute("SELECT COUNT(*) FROM ab_metrics")
+        total_metrics = cur.fetchone()[0]
+        return {
+            "by_status": by_status,
+            "total_assignments": total_assignments,
+            "total_metrics": total_metrics,
         }
 
     def get_memory_stats(self) -> dict:

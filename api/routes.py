@@ -172,6 +172,16 @@ quality_scorer = CaseQualityScorer(memory)
 from agent.active_learner import ActiveLearner
 active_learner = ActiveLearner(memory)
 
+# M5-8: 全局 ABTestFramework（复用 memory 的 db 连接 + 注入 M5-1/M5-4/M5-6 模块）
+from agent.ab_tester import ABTestFramework
+ab_tester = ABTestFramework(
+    memory=memory,
+    prompt_optimizer=prompt_optimizer,
+    quality_scorer=quality_scorer,
+    effect_tracker=effect_tracker,
+    failure_collector=failure_collector,
+)
+
 # 存储已完成的归因结果（M0 用内存存储，M1 切换为 checkpointer）
 _results_store: dict[str, dict] = {}
 
@@ -1825,6 +1835,275 @@ async def get_learning_stats(
         logger.warning(f"learning/stats 降级: {e}")
         return _degraded_response({
             "success": False, "degraded": True, "error": str(e)[:200]
+        })
+
+
+# ===== M5-8: A/B 测试端点 =====
+
+
+class ABExperimentCreateRequest(BaseModel):
+    """A/B 测试实验创建请求"""
+    name: str
+    description: str = ""
+    line_id: str = "heat_treatment"
+    variant_a_config: Optional[dict] = None
+    variant_b_config: Optional[dict] = None
+    metric_names: Optional[list[str]] = None
+    sample_size_target: int = 100
+    user_id: str = "admin"
+
+
+class ABAssignRequest(BaseModel):
+    """A/B 分配请求"""
+    experiment_id: str
+    case_id: str
+    line_id: Optional[str] = None
+    user_id: str = "admin"
+
+
+class ABMetricRequest(BaseModel):
+    """A/B 指标记录请求"""
+    experiment_id: str
+    case_id: str
+    metric_name: str
+    metric_value: float
+    user_id: str = "admin"
+
+
+@app.post("/api/v1/abtest/experiments")
+async def create_ab_experiment(req: ABExperimentCreateRequest):
+    """M5-8: 创建 A/B 测试实验（仅 admin）"""
+    perms = get_user_permissions(req.user_id)
+    if perms["role"] != "admin":
+        raise HTTPException(status_code=403, detail="仅 admin 可创建 A/B 实验")
+    _check_line_access(req.user_id, req.line_id)
+
+    try:
+        result = ab_tester.create_experiment(
+            name=req.name,
+            description=req.description,
+            line_id=req.line_id,
+            variant_a_config=req.variant_a_config,
+            variant_b_config=req.variant_b_config,
+            metric_names=req.metric_names,
+            sample_size_target=req.sample_size_target,
+            created_by=req.user_id,
+        )
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"abtest/experiments 创建降级: {e}")
+        return _degraded_response({
+            "success": False, "degraded": True, "error": str(e)[:200]
+        })
+
+
+@app.get("/api/v1/abtest/experiments")
+async def list_ab_experiments(
+    user_id: str = Query("operator_01"),
+    status: Optional[str] = None,
+    line_id: Optional[str] = None,
+    limit: int = 50,
+):
+    """M5-8: 列出 A/B 测试实验（权限过滤）"""
+    try:
+        user_lines = get_user_lines(user_id)
+        if line_id:
+            _check_line_access(user_id, line_id)
+            target_lines: Optional[str | list[str]] = line_id
+        elif "*" in user_lines:
+            target_lines = None
+        else:
+            target_lines = user_lines
+
+        experiments = ab_tester.list_experiments(
+            status=status, line_id=target_lines, limit=limit
+        )
+        return {"success": True, "count": len(experiments), "experiments": experiments}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"abtest/experiments 列出降级: {e}")
+        return _degraded_response({
+            "success": False, "degraded": True, "error": str(e)[:200],
+            "experiments": [],
+        })
+
+
+@app.get("/api/v1/abtest/experiments/{experiment_id}")
+async def get_ab_experiment(experiment_id: str, user_id: str = Query("admin")):
+    """M5-8: 查询 A/B 测试实验详情"""
+    try:
+        exp = ab_tester.get_experiment(experiment_id)
+        if not exp:
+            raise HTTPException(status_code=404, detail=f"实验 {experiment_id} 不存在")
+        _check_line_access(user_id, exp["line_id"])
+        return {"success": True, "experiment": exp}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"abtest/experiments/{{id}} 查询降级: {e}")
+        return _degraded_response({
+            "success": False, "degraded": True, "error": str(e)[:200]
+        })
+
+
+@app.post("/api/v1/abtest/experiments/{experiment_id}/start")
+async def start_ab_experiment(experiment_id: str, user_id: str = Query("admin")):
+    """M5-8: 开始 A/B 测试实验（admin/supervisor）"""
+    perms = get_user_permissions(user_id)
+    if perms["role"] not in ("admin", "supervisor"):
+        raise HTTPException(status_code=403, detail="仅 admin/supervisor 可启动实验")
+
+    try:
+        exp = ab_tester.get_experiment(experiment_id)
+        if not exp:
+            raise HTTPException(status_code=404, detail=f"实验 {experiment_id} 不存在")
+        _check_line_access(user_id, exp["line_id"])
+
+        result = ab_tester.start_experiment(experiment_id)
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result.get("error", "启动失败"))
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"abtest/experiments/{{id}}/start 降级: {e}")
+        return _degraded_response({
+            "success": False, "degraded": True, "error": str(e)[:200]
+        })
+
+
+@app.post("/api/v1/abtest/experiments/{experiment_id}/stop")
+async def stop_ab_experiment(experiment_id: str, user_id: str = Query("admin")):
+    """M5-8: 停止 A/B 测试实验（admin/supervisor）"""
+    perms = get_user_permissions(user_id)
+    if perms["role"] not in ("admin", "supervisor"):
+        raise HTTPException(status_code=403, detail="仅 admin/supervisor 可停止实验")
+
+    try:
+        exp = ab_tester.get_experiment(experiment_id)
+        if not exp:
+            raise HTTPException(status_code=404, detail=f"实验 {experiment_id} 不存在")
+        _check_line_access(user_id, exp["line_id"])
+
+        result = ab_tester.stop_experiment(experiment_id)
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result.get("error", "停止失败"))
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"abtest/experiments/{{id}}/stop 降级: {e}")
+        return _degraded_response({
+            "success": False, "degraded": True, "error": str(e)[:200]
+        })
+
+
+@app.post("/api/v1/abtest/assign")
+async def assign_ab_variant(req: ABAssignRequest):
+    """M5-8: 将 case_id 分配到 A/B 组（admin/supervisor）"""
+    perms = get_user_permissions(req.user_id)
+    if perms["role"] not in ("admin", "supervisor"):
+        raise HTTPException(status_code=403, detail="仅 admin/supervisor 可分配")
+
+    try:
+        result = ab_tester.assign(
+            experiment_id=req.experiment_id,
+            case_id=req.case_id,
+            line_id=req.line_id,
+        )
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result.get("error", "分配失败"))
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"abtest/assign 降级: {e}")
+        return _degraded_response({
+            "success": False, "degraded": True, "error": str(e)[:200]
+        })
+
+
+@app.post("/api/v1/abtest/metrics")
+async def record_ab_metric(req: ABMetricRequest):
+    """M5-8: 记录 A/B 测试指标（admin/supervisor）"""
+    perms = get_user_permissions(req.user_id)
+    if perms["role"] not in ("admin", "supervisor"):
+        raise HTTPException(status_code=403, detail="仅 admin/supervisor 可记录指标")
+
+    try:
+        result = ab_tester.record_metric(
+            experiment_id=req.experiment_id,
+            case_id=req.case_id,
+            metric_name=req.metric_name,
+            metric_value=req.metric_value,
+        )
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result.get("error", "记录失败"))
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"abtest/metrics 降级: {e}")
+        return _degraded_response({
+            "success": False, "degraded": True, "error": str(e)[:200]
+        })
+
+
+@app.get("/api/v1/abtest/experiments/{experiment_id}/analyze")
+async def analyze_ab_experiment(experiment_id: str, user_id: str = Query("admin")):
+    """M5-8: 分析 A/B 测试结果"""
+    try:
+        exp = ab_tester.get_experiment(experiment_id)
+        if not exp:
+            raise HTTPException(status_code=404, detail=f"实验 {experiment_id} 不存在")
+        _check_line_access(user_id, exp["line_id"])
+
+        result = ab_tester.analyze(experiment_id)
+        if not result.get("success"):
+            raise HTTPException(status_code=400, detail=result.get("error", "分析失败"))
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"abtest/experiments/{{id}}/analyze 降级: {e}")
+        return _degraded_response({
+            "success": False, "degraded": True, "error": str(e)[:200]
+        })
+
+
+@app.get("/api/v1/abtest/experiments/{experiment_id}/metrics")
+async def list_ab_metrics(
+    experiment_id: str,
+    user_id: str = Query("admin"),
+    variant: Optional[str] = None,
+    metric_name: Optional[str] = None,
+):
+    """M5-8: 查询实验指标记录"""
+    try:
+        exp = ab_tester.get_experiment(experiment_id)
+        if not exp:
+            raise HTTPException(status_code=404, detail=f"实验 {experiment_id} 不存在")
+        _check_line_access(user_id, exp["line_id"])
+
+        metrics = ab_tester.list_metrics(
+            experiment_id, variant=variant, metric_name=metric_name
+        )
+        return {
+            "success": True,
+            "count": len(metrics),
+            "experiment_id": experiment_id,
+            "metrics": metrics,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"abtest/experiments/{{id}}/metrics 降级: {e}")
+        return _degraded_response({
+            "success": False, "degraded": True, "error": str(e)[:200],
+            "metrics": [],
         })
 
 
