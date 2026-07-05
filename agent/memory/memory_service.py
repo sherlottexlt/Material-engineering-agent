@@ -198,6 +198,24 @@ class MemoryService:
                 rolled_back_at TIMESTAMP
             )
         """)
+        # M5-7: 主动学习候选表
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS learning_candidates (
+                candidate_id TEXT PRIMARY KEY,
+                source_type TEXT,
+                source_id TEXT,
+                line_id TEXT DEFAULT 'heat_treatment',
+                defect_type TEXT,
+                question TEXT,
+                status TEXT DEFAULT 'pending',
+                answer TEXT,
+                rule_text TEXT,
+                rule_added_to_handbook INTEGER DEFAULT 0,
+                created_at TIMESTAMP,
+                answered_at TIMESTAMP,
+                learned_at TIMESTAMP
+            )
+        """)
         # M4-9: 旧表迁移（已有表无 line_id 列时 ALTER TABLE 补列）
         self._migrate_add_line_id()
         # M5-2: 旧表迁移（已有 effect_tracking 表无归因列时 ALTER TABLE 补列）
@@ -234,6 +252,10 @@ class MemoryService:
             "CREATE INDEX IF NOT EXISTS idx_prompt_opt_role ON prompt_optimizations(role, status)",
             "CREATE INDEX IF NOT EXISTS idx_prompt_opt_status ON prompt_optimizations(status)",
             "CREATE INDEX IF NOT EXISTS idx_prompt_opt_version ON prompt_optimizations(version)",
+            # M5-7: 主动学习候选索引
+            "CREATE INDEX IF NOT EXISTS idx_learning_status ON learning_candidates(status)",
+            "CREATE INDEX IF NOT EXISTS idx_learning_line ON learning_candidates(line_id, status)",
+            "CREATE INDEX IF NOT EXISTS idx_learning_source ON learning_candidates(source_type, status)",
         ]
         for sql in indexes:
             self.db.execute(sql)
@@ -1050,6 +1072,232 @@ class MemoryService:
         cur = self.db.execute(query, params)
         columns = [d[0] for d in cur.description]
         return [dict(zip(columns, row)) for row in cur.fetchall()]
+
+    # ===== M5-7: 主动学习候选 CRUD =====
+
+    def save_learning_candidate(
+        self,
+        candidate_id: str,
+        source_type: str,
+        source_id: str,
+        line_id: str,
+        defect_type: Optional[str],
+        question: str,
+    ) -> bool:
+        """写入一条学习候选
+
+        Args:
+            candidate_id: 候选ID
+            source_type: 'low_quality' / 'failure_case' / 'high_frequency'
+            source_id: record_id / failure_id / defect_type
+            line_id: 产线ID
+            defect_type: 缺陷类型（可选）
+            question: 专家询问问题
+
+        Returns:
+            是否成功
+        """
+        try:
+            self.db.execute(
+                """INSERT INTO learning_candidates
+                   (candidate_id, source_type, source_id, line_id, defect_type,
+                    question, status, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)""",
+                (candidate_id, source_type, source_id, line_id, defect_type,
+                 question, datetime.now()),
+            )
+            self.db.commit()
+            return True
+        except Exception as e:
+            logger.error(f"写入 learning_candidate 失败: {e}")
+            return False
+
+    def list_learning_candidates(
+        self,
+        status: Optional[str] = None,
+        line_id: Optional[str | list[str]] = None,
+        source_type: Optional[str] = None,
+        limit: int = 100,
+    ) -> list[dict]:
+        """列出学习候选
+
+        Args:
+            status: 状态过滤（pending/answered/learned/skipped）
+            line_id: 产线ID过滤（支持 str 或 list[str]）
+            source_type: 来源类型过滤
+            limit: 最大返回数量
+        """
+        query = "SELECT * FROM learning_candidates WHERE 1=1"
+        params: list = []
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+        if source_type:
+            query += " AND source_type = ?"
+            params.append(source_type)
+        if line_id:
+            if isinstance(line_id, (list, tuple)):
+                placeholders = ",".join("?" for _ in line_id)
+                query += f" AND line_id IN ({placeholders})"
+                params.extend(line_id)
+            else:
+                query += " AND line_id = ?"
+                params.append(line_id)
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+
+        cur = self.db.execute(query, params)
+        columns = [d[0] for d in cur.description]
+        return [dict(zip(columns, row)) for row in cur.fetchall()]
+
+    def get_learning_candidate(self, candidate_id: str) -> Optional[dict]:
+        """查询单条学习候选"""
+        cur = self.db.execute(
+            "SELECT * FROM learning_candidates WHERE candidate_id = ?",
+            (candidate_id,),
+        )
+        columns = [d[0] for d in cur.description]
+        row = cur.fetchone()
+        return dict(zip(columns, row)) if row else None
+
+    def update_learning_candidate(
+        self,
+        candidate_id: str,
+        status: Optional[str] = None,
+        answer: Optional[str] = None,
+        rule_text: Optional[str] = None,
+        rule_added_to_handbook: Optional[int] = None,
+    ) -> bool:
+        """更新学习候选（部分字段更新，仅传非 None 的字段）
+
+        Args:
+            candidate_id: 候选ID
+            status: 新状态（answered/learned/skipped）
+            answer: 专家回答
+            rule_text: 提炼的规则
+            rule_added_to_handbook: 是否已写入手册（0/1）
+        """
+        sets: list[str] = []
+        params: list = []
+        if status is not None:
+            sets.append("status = ?")
+            params.append(status)
+            if status == "answered":
+                sets.append("answered_at = ?")
+                params.append(datetime.now())
+            elif status == "learned":
+                sets.append("learned_at = ?")
+                params.append(datetime.now())
+        if answer is not None:
+            sets.append("answer = ?")
+            params.append(answer)
+        if rule_text is not None:
+            sets.append("rule_text = ?")
+            params.append(rule_text)
+        if rule_added_to_handbook is not None:
+            sets.append("rule_added_to_handbook = ?")
+            params.append(rule_added_to_handbook)
+
+        if not sets:
+            return False
+
+        params.append(candidate_id)
+        sql = f"UPDATE learning_candidates SET {', '.join(sets)} WHERE candidate_id = ?"
+        cur = self.db.execute(sql, params)
+        self.db.commit()
+        return cur.rowcount > 0
+
+    def get_defect_frequency(
+        self,
+        line_id: Optional[str | list[str]] = None,
+        days: int = 30,
+        top_n: int = 5,
+    ) -> list[dict]:
+        """统计缺陷类型频次（用于识别高频缺陷学习候选）
+
+        Args:
+            line_id: 产线ID过滤（支持 str 或 list[str]）
+            days: 统计天数
+            top_n: 返回前 N 个高频缺陷
+
+        Returns:
+            [{defect_type, count, line_id}, ...] 按频次降序
+        """
+        since = datetime.now() - timedelta(days=days)
+        query = (
+            "SELECT defect_type, line_id, COUNT(*) as count "
+            "FROM episodic WHERE created_at >= ? AND defect_type IS NOT NULL "
+            "AND defect_type != ''"
+        )
+        params: list = [since]
+        if line_id:
+            if isinstance(line_id, (list, tuple)):
+                placeholders = ",".join("?" for _ in line_id)
+                query += f" AND line_id IN ({placeholders})"
+                params.extend(line_id)
+            else:
+                query += " AND line_id = ?"
+                params.append(line_id)
+        query += " GROUP BY defect_type, line_id ORDER BY count DESC LIMIT ?"
+        params.append(top_n)
+
+        cur = self.db.execute(query, params)
+        columns = [d[0] for d in cur.description]
+        return [dict(zip(columns, row)) for row in cur.fetchall()]
+
+    def get_learning_stats(
+        self,
+        line_id: Optional[str | list[str]] = None,
+        days: int = 30,
+    ) -> dict:
+        """获取主动学习统计
+
+        Returns:
+            {
+                "total": int,
+                "by_status": {"pending": int, "answered": int, "learned": int, "skipped": int},
+                "by_source": {"low_quality": int, "failure_case": int, "high_frequency": int},
+                "rules_extracted": int,
+                "rules_added_to_handbook": int,
+            }
+        """
+        since = datetime.now() - timedelta(days=days)
+        query = "SELECT status, source_type, rule_text, rule_added_to_handbook FROM learning_candidates WHERE created_at >= ?"
+        params: list = [since]
+        if line_id:
+            if isinstance(line_id, (list, tuple)):
+                placeholders = ",".join("?" for _ in line_id)
+                query += f" AND line_id IN ({placeholders})"
+                params.extend(line_id)
+            else:
+                query += " AND line_id = ?"
+                params.append(line_id)
+
+        cur = self.db.execute(query, params)
+        rows = cur.fetchall()
+
+        by_status = {"pending": 0, "answered": 0, "learned": 0, "skipped": 0}
+        by_source = {"low_quality": 0, "failure_case": 0, "high_frequency": 0}
+        rules_extracted = 0
+        rules_added = 0
+
+        for status, source_type, rule_text, rule_added in rows:
+            if status in by_status:
+                by_status[status] += 1
+            if source_type in by_source:
+                by_source[source_type] += 1
+            if rule_text:
+                rules_extracted += 1
+            if rule_added:
+                rules_added += 1
+
+        return {
+            "total": len(rows),
+            "by_status": by_status,
+            "by_source": by_source,
+            "rules_extracted": rules_extracted,
+            "rules_added_to_handbook": rules_added,
+        }
 
     def get_memory_stats(self) -> dict:
         """获取记忆统计概览

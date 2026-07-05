@@ -168,6 +168,10 @@ prompt_optimizer = PromptOptimizer(memory)
 from agent.case_quality_scorer import CaseQualityScorer
 quality_scorer = CaseQualityScorer(memory)
 
+# M5-7: 全局 ActiveLearner（复用 memory 的 db 连接）
+from agent.active_learner import ActiveLearner
+active_learner = ActiveLearner(memory)
+
 # 存储已完成的归因结果（M0 用内存存储，M1 切换为 checkpointer）
 _results_store: dict[str, dict] = {}
 
@@ -1622,6 +1626,203 @@ async def get_case_quality_detail(
         raise
     except Exception as e:
         logger.warning(f"cases/{{record_id}}/quality 降级: {e}")
+        return _degraded_response({
+            "success": False, "degraded": True, "error": str(e)[:200]
+        })
+
+
+# ===== M5-7: 知识主动学习端点 =====
+
+@app.post("/api/v1/learning/identify")
+async def identify_learning_candidates(
+    user_id: str = Query("admin", description="触发识别的用户"),
+    line_id: Optional[str] = None,
+    days: int = Query(30, description="失败案例/高频缺陷统计天数"),
+    max_count: int = Query(20, description="最大候选数量"),
+):
+    """M5-7: 识别学习候选（低质量案例 + 失败案例 + 高频缺陷）
+
+    识别来源：
+    - low_quality: M5-6 低质量案例（quality_score < 0.4）
+    - failure_case: M5-4 失败案例（status=open）
+    - high_frequency: 高频缺陷类型（最近 N 天出现 >= 3 次）
+
+    幂等：同 source_type+source_id 已存在则跳过。
+    """
+    perms = get_user_permissions(user_id)
+    if perms["role"] not in ("admin", "supervisor"):
+        raise HTTPException(status_code=403, detail="仅 admin/supervisor 可触发学习候选识别")
+    try:
+        result = active_learner.identify_candidates(
+            line_id=line_id, days=days, max_count=max_count
+        )
+        return {"success": True, **result}
+    except Exception as e:
+        logger.warning(f"learning/identify 降级: {e}")
+        return _degraded_response({
+            "success": False, "degraded": True, "error": str(e)[:200]
+        })
+
+
+@app.get("/api/v1/learning/candidates")
+async def list_learning_candidates(
+    user_id: str = Query("operator_01"),
+    status: Optional[str] = None,
+    line_id: Optional[str] = None,
+    source_type: Optional[str] = None,
+    limit: int = Query(100, description="最大返回数量"),
+):
+    """M5-7: 列出学习候选（支持 status/line_id/source_type 过滤）"""
+    try:
+        if line_id:
+            _check_line_access(user_id, line_id)
+            target_lines: Optional[str | list[str]] = line_id
+        else:
+            perms = get_user_permissions(user_id)
+            if perms["role"] == "admin":
+                target_lines = None
+            else:
+                user_lines = get_user_lines(user_id)
+                if not user_lines:
+                    return {"success": True, "candidates": []}
+                target_lines = user_lines
+
+        candidates = active_learner.list_candidates(
+            status=status, line_id=target_lines, source_type=source_type, limit=limit
+        )
+        return {"success": True, "count": len(candidates), "candidates": candidates}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"learning/candidates 降级: {e}")
+        return _degraded_response({
+            "success": False, "degraded": True, "error": str(e)[:200]
+        })
+
+
+@app.get("/api/v1/learning/candidates/{candidate_id}")
+async def get_learning_candidate_detail(
+    candidate_id: str,
+    user_id: str = Query("admin"),
+):
+    """M5-7: 查询单条学习候选详情"""
+    try:
+        candidate = active_learner.get_candidate(candidate_id)
+        if not candidate:
+            raise HTTPException(status_code=404, detail=f"候选 {candidate_id} 不存在")
+        # 产线权限校验
+        _check_line_access(user_id, candidate.get("line_id", "heat_treatment"))
+        return {"success": True, "candidate": candidate}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"learning/candidates/{{id}} 降级: {e}")
+        return _degraded_response({
+            "success": False, "degraded": True, "error": str(e)[:200]
+        })
+
+
+class LearningAnswerRequest(BaseModel):
+    """M5-7: 提交学习回答请求"""
+    answer: str
+    auto_extract: bool = True
+    user_id: str = "admin"
+
+
+@app.post("/api/v1/learning/answer/{candidate_id}")
+async def submit_learning_answer(
+    candidate_id: str,
+    request: LearningAnswerRequest,
+):
+    """M5-7: 提交专家回答 → 提炼规则 → 写入 handbook 索引
+
+    流程：
+    1. 保存回答，status=pending → answered
+    2. 若 auto_extract=true：提炼规则 + 写入 handbook_index.json + status=learned
+    """
+    perms = get_user_permissions(request.user_id)
+    if perms["role"] not in ("admin", "supervisor"):
+        raise HTTPException(status_code=403, detail="仅 admin/supervisor 可提交学习回答")
+    try:
+        result = active_learner.submit_answer(
+            candidate_id=candidate_id,
+            answer=request.answer,
+            auto_extract=request.auto_extract,
+        )
+        if not result.get("success"):
+            raise HTTPException(status_code=400, detail=result.get("error", "提交失败"))
+        return {"success": True, **result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"learning/answer 降级: {e}")
+        return _degraded_response({
+            "success": False, "degraded": True, "error": str(e)[:200]
+        })
+
+
+@app.post("/api/v1/learning/skip/{candidate_id}")
+async def skip_learning_candidate(
+    candidate_id: str,
+    user_id: str = Query("admin"),
+):
+    """M5-7: 跳过学习候选（status=pending → skipped）"""
+    perms = get_user_permissions(user_id)
+    if perms["role"] not in ("admin", "supervisor"):
+        raise HTTPException(status_code=403, detail="仅 admin/supervisor 可跳过候选")
+    try:
+        result = active_learner.skip_candidate(candidate_id)
+        if not result.get("success"):
+            raise HTTPException(status_code=400, detail=result.get("error", "跳过失败"))
+        return {"success": True, **result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"learning/skip 降级: {e}")
+        return _degraded_response({
+            "success": False, "degraded": True, "error": str(e)[:200]
+        })
+
+
+@app.get("/api/v1/learning/stats")
+async def get_learning_stats(
+    user_id: str = Query("operator_01"),
+    line_id: Optional[str] = None,
+    days: int = Query(30, description="统计天数"),
+):
+    """M5-7: 获取主动学习统计
+
+    返回：{total, by_status, by_source, rules_extracted, rules_added_to_handbook}
+    """
+    try:
+        if line_id:
+            _check_line_access(user_id, line_id)
+            target_lines: Optional[str | list[str]] = line_id
+        else:
+            perms = get_user_permissions(user_id)
+            if perms["role"] == "admin":
+                target_lines = None
+            else:
+                user_lines = get_user_lines(user_id)
+                if not user_lines:
+                    return {
+                        "success": True,
+                        "stats": {
+                            "total": 0,
+                            "by_status": {"pending": 0, "answered": 0, "learned": 0, "skipped": 0},
+                            "by_source": {"low_quality": 0, "failure_case": 0, "high_frequency": 0},
+                            "rules_extracted": 0,
+                            "rules_added_to_handbook": 0,
+                        },
+                    }
+                target_lines = user_lines
+
+        stats = active_learner.get_learning_stats(line_id=target_lines, days=days)
+        return {"success": True, "stats": stats}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"learning/stats 降级: {e}")
         return _degraded_response({
             "success": False, "degraded": True, "error": str(e)[:200]
         })
